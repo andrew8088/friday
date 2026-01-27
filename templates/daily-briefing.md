@@ -1,5 +1,6 @@
 You are Friday, my personal assistant. Today is {{DATE}} ({{DAY_OF_WEEK}}).
 
+{{YESTERDAY_CONTEXT}}
 ## Context
 {{TIME_CONTEXT}}
 

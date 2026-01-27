@@ -279,13 +279,181 @@ def triage():
         sys.exit(1)
 
 
+@main.command()
+@click.option("--date", "-d", "target_date", default=None,
+              help="Date to recap (YYYY-MM-DD), defaults to today")
+@click.option("--deep", is_flag=True, help="Launch interactive deep mode with Claude")
+def recap(target_date: str | None, deep: bool):
+    """Record daily recap."""
+    from .recap import determine_recap_mode, RecapMode, Recap, load_recap
+
+    config = load_config()
+    target = date.fromisoformat(target_date) if target_date else date.today()
+
+    # Determine directories
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+    recap_dir.mkdir(parents=True, exist_ok=True)
+
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    # Check if recap already exists
+    existing = load_recap(target, recap_dir)
+    if existing:
+        if not click.confirm(f"Recap for {target} already exists. Overwrite?"):
+            return
+
+    if deep:
+        _run_deep_recap(target, config, recap_dir, journal_dir)
+    else:
+        _run_quick_recap(target, config, recap_dir, journal_dir)
+
+
+def _run_quick_recap(target: date, config, recap_dir: Path, journal_dir: Path):
+    """Quick 2-minute structured recap."""
+    from .recap import determine_recap_mode, RecapMode, Recap
+
+    # Check what data we have
+    try:
+        client = TickTickClient()
+        ticktick_available = True
+    except AuthenticationError:
+        ticktick_available = False
+
+    mode = determine_recap_mode(target, journal_dir, ticktick_available)
+
+    # Show context based on mode
+    if mode == RecapMode.FULL:
+        click.echo(f"Recap for {target} (comparing to morning briefing)\n")
+    elif mode == RecapMode.TASKS_ONLY:
+        click.echo(f"Recap for {target} (task data available)\n")
+    else:
+        click.echo(f"Recap for {target} (freeform reflection)\n")
+
+    # Collect input
+    click.echo("What went well today? (comma-separated or freeform)")
+    wins_raw = click.prompt(">", default="").strip()
+    wins = [w.strip() for w in wins_raw.split(",") if w.strip()] if wins_raw else []
+
+    click.echo("\nWhat didn't go as planned?")
+    blockers_raw = click.prompt(">", default="").strip()
+    blockers = [b.strip() for b in blockers_raw.split(",") if b.strip()] if blockers_raw else []
+
+    click.echo("\nOne focus for tomorrow?")
+    tomorrow = click.prompt(">", default="").strip()
+
+    click.echo("\nEnergy level today? (low/medium/high, or skip)")
+    energy = click.prompt(">", default="").strip() or None
+
+    click.echo("\nAny additional reflection? (optional, press enter to skip)")
+    reflection = click.prompt(">", default="").strip()
+
+    # Build and save recap
+    recap_entry = Recap(
+        date=target,
+        mode=mode,
+        wins=wins,
+        blockers=blockers,
+        energy=energy,
+        tomorrow_focus=tomorrow,
+        reflection=reflection,
+    )
+
+    output_file = recap_dir / f"{target.isoformat()}.md"
+    output_file.write_text(recap_entry.to_markdown())
+
+    click.echo(f"\n✓ Recap saved to {output_file}")
+
+
+def _run_deep_recap(target: date, config, recap_dir: Path, journal_dir: Path):
+    """Launch interactive deep recap with Claude."""
+    prompt = compile_recap_prompt(target, config, journal_dir, recap_dir)
+
+    try:
+        # Run Claude interactively with the recap context
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            cwd=FRIDAY_HOME,
+        )
+        if result.returncode != 0:
+            sys.exit(1)
+    except FileNotFoundError:
+        click.echo("Error: 'claude' command not found", err=True)
+        sys.exit(1)
+
+
+@main.command("compile-recap")
+@click.option("--date", "-d", "target_date", default=None,
+              help="Date to compile recap for (YYYY-MM-DD)")
+def compile_recap_cmd(target_date: str | None):
+    """Output recap context for Claude (used by /recap slash command)."""
+    config = load_config()
+    target = date.fromisoformat(target_date) if target_date else date.today()
+
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+
+    prompt = compile_recap_prompt(target, config, journal_dir, recap_dir)
+    click.echo(prompt)
+
+
 def compile_briefing() -> str:
     """Compile the daily briefing prompt."""
     from datetime import datetime, timedelta
+    from .recap import load_recap, load_recent_recaps
 
     config = load_config()
     today = date.today()
     now = datetime.now()
+
+    # Get yesterday's recap context (if fresh enough)
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+
+    freshness_hours = config.recap_freshness_hours or 36
+    yesterday = today - timedelta(days=1)
+    yesterday_recap = load_recap(yesterday, recap_dir)
+
+    recap_context = ""
+    if yesterday_recap and yesterday_recap.age_hours < freshness_hours:
+        # Fresh recap — include specific lessons
+        wins_str = ", ".join(yesterday_recap.wins) if yesterday_recap.wins else "None noted"
+        blockers_str = ", ".join(yesterday_recap.blockers) if yesterday_recap.blockers else "None noted"
+        tomorrow_str = yesterday_recap.tomorrow_focus or "None set"
+        recap_context = f"""## Yesterday's Reflection
+
+**Wins:** {wins_str}
+**Blockers:** {blockers_str}
+**Today's focus (from last night):** {tomorrow_str}
+
+"""
+    else:
+        # Check for patterns from recent recaps
+        recent = load_recent_recaps(days=7, recap_dir=recap_dir)
+        if len(recent) >= 3:
+            # Extract common blockers
+            all_blockers = [b for r in recent for b in r.blockers]
+            if all_blockers:
+                unique_blockers = list(set(all_blockers))[:3]
+                recap_context = f"""## Recent Patterns
+
+From {len(recent)} recaps this week, recurring blockers: {", ".join(unique_blockers)}
+
+"""
 
     # Parse work hours
     work_start_str, work_end_str = config.work_hours.split("-")
@@ -363,6 +531,7 @@ def compile_briefing() -> str:
         prompt = template.read_text()
         prompt = prompt.replace("{{DATE}}", today.isoformat())
         prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
+        prompt = prompt.replace("{{YESTERDAY_CONTEXT}}", recap_context)
         prompt = prompt.replace("{{TASKS}}", actionable_tasks_md)
         prompt = prompt.replace("{{CALENDAR}}", calendar_md)
         prompt = prompt.replace("{{FREE_SLOTS}}", free_slots_md)
@@ -400,6 +569,8 @@ These are tasks due within 3 days OR marked urgent+important (Q1).
 
 def compile_review() -> str:
     """Compile the weekly review prompt."""
+    from .recap import load_recent_recaps
+
     config = load_config()
     today = date.today()
 
@@ -416,6 +587,37 @@ def compile_review() -> str:
             continue
 
     accomplishments_md = "\n\n".join(accomplishments) or "No journal entries this week."
+
+    # Get this week's recaps
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+
+    recaps = load_recent_recaps(days=7, recap_dir=recap_dir)
+
+    if recaps:
+        # Aggregate wins and blockers
+        all_wins = [w for r in recaps for w in r.wins]
+        all_blockers = [b for r in recaps for b in r.blockers]
+
+        wins_md = "\n".join(f"- {w}" for w in all_wins) if all_wins else "None recorded"
+        blockers_md = "\n".join(f"- {b}" for b in all_blockers) if all_blockers else "None recorded"
+        energy_trend = ", ".join(f"{r.date.strftime('%a')}: {r.energy or '?'}" for r in recaps)
+
+        recap_summary_md = f"""### Week's Wins
+{wins_md}
+
+### Week's Blockers
+{blockers_md}
+
+### Energy Trend
+{energy_trend}
+
+### Recaps Completed
+{len(recaps)}/7 days"""
+    else:
+        recap_summary_md = "No recaps recorded this week."
 
     # Get overdue tasks
     try:
@@ -442,6 +644,7 @@ def compile_review() -> str:
         prompt = template.read_text()
         prompt = prompt.replace("{{DATE}}", today.isoformat())
         prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
+        prompt = prompt.replace("{{RECAP_SUMMARY}}", recap_summary_md)
         prompt = prompt.replace("{{ACCOMPLISHMENTS}}", accomplishments_md)
         prompt = prompt.replace("{{OVERDUE_TASKS}}", overdue_md)
         prompt = prompt.replace("{{STUCK_TASKS}}", "N/A")
@@ -472,6 +675,102 @@ def compile_review() -> str:
 3. Flag calendar conflicts for next week
 4. Suggest 3 focus areas for the coming week
 """
+
+
+def compile_recap_prompt(target: date, config, journal_dir: Path, recap_dir: Path) -> str:
+    """Compile context for deep recap mode."""
+    from .recap import determine_recap_mode, RecapMode, load_recent_recaps
+
+    # Determine mode
+    try:
+        client = TickTickClient()
+        ticktick_available = True
+        all_tasks = client.get_all_tasks()
+        # Get tasks completed today (high priority or due today that are marked done)
+        completed = [t for t in all_tasks if t.due_date == target]
+    except AuthenticationError:
+        ticktick_available = False
+        completed = []
+
+    mode = determine_recap_mode(target, journal_dir, ticktick_available)
+
+    # Build context based on mode
+    sections = [
+        f"# Evening Recap — {target.strftime('%A, %B %d, %Y')}",
+        f"**Mode:** {mode.value}",
+    ]
+
+    if mode == RecapMode.FULL:
+        # Include morning briefing
+        briefing_file = journal_dir / f"{target.isoformat()}.md"
+        if briefing_file.exists():
+            briefing = briefing_file.read_text()
+            # Truncate if very long
+            if len(briefing) > 2000:
+                briefing = briefing[:2000] + "\n\n[... truncated ...]"
+            sections.append(f"## This Morning's Plan\n\n{briefing}")
+
+    if ticktick_available and completed:
+        completed_md = "\n".join(f"- {t.title}" for t in completed[:10])
+        sections.append(f"## Tasks Due Today\n\n{completed_md}")
+
+    # Include recent recaps for pattern detection
+    recent = load_recent_recaps(days=7, recap_dir=recap_dir)
+    if recent:
+        patterns_items = []
+        for r in recent[-3:]:  # Last 3 recaps
+            wins_str = ", ".join(r.wins[:2]) if r.wins else "none"
+            blockers_str = ", ".join(r.blockers[:2]) if r.blockers else "none"
+            patterns_items.append(f"- {r.date}: wins=[{wins_str}], blockers=[{blockers_str}]")
+        patterns_md = "\n".join(patterns_items)
+        sections.append(f"## Recent Recaps (for pattern detection)\n\n{patterns_md}")
+
+    # Instructions based on mode
+    if mode == RecapMode.FULL:
+        sections.append("""## Your Task
+
+Guide me through an evening reflection by comparing my morning plan to what actually happened.
+
+1. Ask what got done as planned
+2. Ask what didn't happen and why
+3. Ask about any wins not in the original plan
+4. Note any patterns from recent recaps
+5. Help me crystallize one focus for tomorrow
+
+After our conversation, generate a recap file with YAML frontmatter containing:
+- date, mode, wins (list), blockers (list), energy, tags
+- A ## Reflection section summarizing our discussion
+- A ## Tomorrow's Focus section with the intention we identified
+
+Keep the conversation brief (5-7 exchanges). Be curious, not judgmental.""")
+    elif mode == RecapMode.TASKS_ONLY:
+        sections.append("""## Your Task
+
+Guide me through an evening reflection based on today's tasks.
+
+1. Ask what felt like a win today
+2. Ask what was harder than expected
+3. Look for recurring blockers from recent recaps
+4. Help me set one focus for tomorrow
+
+After our conversation, generate a recap file with YAML frontmatter.
+Keep the conversation brief (5-7 exchanges).""")
+    else:
+        sections.append("""## Your Task
+
+Guide me through an open evening reflection.
+
+1. Ask how today went overall
+2. Ask what's worth remembering
+3. Ask what I would do differently
+4. Help me set one intention for tomorrow
+
+After our conversation, generate a recap file with YAML frontmatter.
+Keep the conversation brief (5-7 exchanges).""")
+
+    sections.append(f"\nSave the final recap to: {recap_dir / f'{target.isoformat()}.md'}")
+
+    return "\n\n".join(sections)
 
 
 if __name__ == "__main__":
