@@ -1,0 +1,19 @@
+# Cached API responses
+data/*.json
+
+# Configuration with secrets
+config/friday.conf
+config/.tokens
+config/.tokens.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Daily journals (optional - uncomment to track)
+# journal/daily/
+
+# Keep the directories
+!data/.gitkeep
