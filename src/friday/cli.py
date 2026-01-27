@@ -183,16 +183,33 @@ def morning():
 
     prompt = compile_briefing()
 
-    # Pipe to claude
+    # Pipe to claude with streaming output
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["claude", "-p", "-"],
-            input=prompt,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=True,
         )
-        output = result.stdout
+
+        # Send prompt and close stdin
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+
+        # Stream output in real-time while collecting it
+        output_lines = []
+        for line in proc.stdout:
+            click.echo(line, nl=False)
+            output_lines.append(line)
+
+        proc.wait()
+        output = "".join(output_lines)
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()
+            click.echo(f"Error running claude: {stderr}", err=True)
+            sys.exit(1)
 
         # Append if file exists, otherwise create
         if output_file.exists():
@@ -201,10 +218,6 @@ def morning():
         else:
             output_file.write_text(output)
 
-        click.echo(output)
-    except subprocess.CalledProcessError as e:
-        click.echo(f"Error running claude: {e.stderr}", err=True)
-        sys.exit(1)
     except FileNotFoundError:
         click.echo("Error: 'claude' command not found", err=True)
         sys.exit(1)
@@ -223,19 +236,32 @@ def review():
     prompt = compile_review()
 
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["claude", "-p", "-"],
-            input=prompt,
-            capture_output=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=True,
         )
-        output = result.stdout
+
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+
+        output_lines = []
+        for line in proc.stdout:
+            click.echo(line, nl=False)
+            output_lines.append(line)
+
+        proc.wait()
+        output = "".join(output_lines)
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()
+            click.echo(f"Error running claude: {stderr}", err=True)
+            sys.exit(1)
+
         output_file.write_text(output)
-        click.echo(output)
-    except subprocess.CalledProcessError as e:
-        click.echo(f"Error running claude: {e.stderr}", err=True)
-        sys.exit(1)
+
     except FileNotFoundError:
         click.echo("Error: 'claude' command not found", err=True)
         sys.exit(1)
@@ -255,7 +281,7 @@ def triage():
 
 def compile_briefing() -> str:
     """Compile the daily briefing prompt."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     config = load_config()
     today = date.today()
@@ -267,72 +293,80 @@ def compile_briefing() -> str:
     work_end = int(work_end_str.split(":")[0])
     is_work_hours = work_start <= now.hour < work_end
 
-    # Fetch and categorize tasks
-    work_tasks_md = ""
-    personal_tasks_md = ""
-    other_tasks_md = ""
+    # Fetch all tasks and filter to actionable ones
+    actionable_tasks_md = ""
+    work_tasks = []
+    personal_tasks = []
 
     try:
         client = TickTickClient()
-        tasks = client.get_priority_tasks()
+        all_tasks = client.get_all_tasks()
 
-        work_tasks = [t for t in tasks if t.project_name in config.work_task_lists]
-        personal_tasks = [t for t in tasks if t.project_name in config.personal_task_lists]
-        other_tasks = [t for t in tasks if t.project_name not in config.work_task_lists and t.project_name not in config.personal_task_lists]
+        # Actionable = due in 3 days OR Q1 (urgent + important)
+        actionable = [
+            t for t in all_tasks
+            if t.is_urgent(urgent_days=3) or t.quadrant(urgent_days=3) == 1
+        ]
 
-        def format_tasks(task_list):
-            return "\n".join(
-                f"- [{t.priority}] {t.title} (due: {t.due_date or 'no date'})"
-                for t in task_list
-            ) or "None"
+        # Split by work/personal
+        work_tasks = [t for t in actionable if t.project_name in config.work_task_lists]
+        personal_tasks = [t for t in actionable if t.project_name in config.personal_task_lists]
+        other_tasks = [t for t in actionable if t.project_name not in config.work_task_lists and t.project_name not in config.personal_task_lists]
 
-        work_tasks_md = format_tasks(work_tasks)
-        personal_tasks_md = format_tasks(personal_tasks)
-        other_tasks_md = format_tasks(other_tasks)
+        def format_task(t):
+            days_until = (t.due_date - today).days if t.due_date else None
+            urgency = ""
+            if days_until is not None:
+                if days_until < 0:
+                    urgency = f"OVERDUE by {-days_until}d"
+                elif days_until == 0:
+                    urgency = "due TODAY"
+                else:
+                    urgency = f"due in {days_until}d"
+            quadrant = t.quadrant_label()
+            return f"- [{quadrant}] {t.title} ({urgency}, project: {t.project_name})"
+
+        work_tasks_md = "\n".join(format_task(t) for t in work_tasks) or "None"
+        personal_tasks_md = "\n".join(format_task(t) for t in personal_tasks) or "None"
+        other_tasks_md = "\n".join(format_task(t) for t in other_tasks) or "None"
+
+        actionable_tasks_md = f"""### Work Tasks ({', '.join(config.work_task_lists)})
+{work_tasks_md}
+
+### Personal Tasks ({', '.join(config.personal_task_lists)})
+{personal_tasks_md}
+
+### Other
+{other_tasks_md}"""
 
     except AuthenticationError:
-        work_tasks_md = "(TickTick not authenticated - run 'friday auth')"
-        personal_tasks_md = ""
-        other_tasks_md = ""
+        actionable_tasks_md = "(TickTick not authenticated - run 'friday auth')"
 
+    # Calendar events
     events = cal.fetch_today(config)
     calendar_md = "\n".join(
-        f"- {e.format_time()} {e.title}" + (f" @ {e.location}" if e.location else "")
+        f"- {e.format_time()} - {e.end.strftime('%H:%M') if e.end and not e.all_day else ''} {e.title}".strip()
+        + (f" @ {e.location}" if e.location else "")
         for e in events
     ) or "No events today."
 
-    # Check for deep work conflicts
-    deep_work = config.deep_work_hours
-    conflicts = []
-    for event in events:
-        if event.all_day:
-            continue
-        event_hour = event.start.hour
-        for block in deep_work:
-            start, end = block.split("-")
-            start_hour = int(start.split(":")[0])
-            end_hour = int(end.split(":")[0])
-            if start_hour <= event_hour < end_hour:
-                conflicts.append(f"- {event.title} conflicts with deep work ({block})")
-
-    conflicts_md = "\n".join(conflicts) if conflicts else "None"
+    # Find free time slots
+    free_slots = cal.find_free_slots(events, work_start=work_start, work_end=work_end, min_duration=30)
+    free_slots_md = "\n".join(f"- {slot.format()}" for slot in free_slots) or "No free slots today."
 
     # Context for Claude
     time_context = "during work hours" if is_work_hours else "outside work hours"
-    task_priority_hint = (
-        f"Currently {time_context} ({config.work_hours}). "
-        f"Prioritize {'work tasks (from {})'.format(', '.join(config.work_task_lists)) if is_work_hours else 'personal tasks (from {})'.format(', '.join(config.personal_task_lists))} accordingly."
-    )
+    task_focus = "work" if is_work_hours else "personal"
 
     template = FRIDAY_HOME / "templates" / "daily-briefing.md"
     if template.exists():
         prompt = template.read_text()
         prompt = prompt.replace("{{DATE}}", today.isoformat())
         prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
-        prompt = prompt.replace("{{TASKS}}", f"### Work Tasks ({', '.join(config.work_task_lists)})\n{work_tasks_md}\n\n### Personal Tasks ({', '.join(config.personal_task_lists)})\n{personal_tasks_md}\n\n### Other\n{other_tasks_md}")
+        prompt = prompt.replace("{{TASKS}}", actionable_tasks_md)
         prompt = prompt.replace("{{CALENDAR}}", calendar_md)
-        prompt = prompt.replace("{{CONFLICTS}}", conflicts_md)
-        prompt = prompt.replace("{{TIME_CONTEXT}}", task_priority_hint)
+        prompt = prompt.replace("{{FREE_SLOTS}}", free_slots_md)
+        prompt = prompt.replace("{{TIME_CONTEXT}}", f"Currently {time_context} ({config.work_hours}). Focus on {task_focus} tasks.")
         return prompt
 
     # Fallback inline template
@@ -342,29 +376,25 @@ def compile_briefing() -> str:
 {today.strftime("%A, %B %d, %Y")}
 
 ## Context
-{task_priority_hint}
+Currently {time_context} ({config.work_hours}). Focus on {task_focus} tasks.
 
 ## Today's Calendar
 {calendar_md}
 
-## Work Tasks ({', '.join(config.work_task_lists)})
-{work_tasks_md}
+## Free Time Slots
+{free_slots_md}
 
-## Personal Tasks ({', '.join(config.personal_task_lists)})
-{personal_tasks_md}
+## Actionable Tasks
+These are tasks due within 3 days OR marked urgent+important (Q1).
 
-## Other Tasks
-{other_tasks_md}
-
-## Deep Work Conflicts
-{conflicts_md}
+{actionable_tasks_md}
 
 ## Instructions
-1. Summarize the day ahead
-2. Identify the top 3 priorities based on current time context
-3. Flag any scheduling conflicts
-4. Suggest time blocks for focused work
-5. Be direct and concise
+1. For each actionable task, recommend a specific free time slot to work on it
+2. Match task type to time of day (work tasks during work hours, personal outside)
+3. Prioritize Q1 (Do) tasks first, then by due date
+4. Flag any tasks that won't fit in today's free slots
+5. Be specific with times, not vague
 """
 
 

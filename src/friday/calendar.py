@@ -173,3 +173,84 @@ def fetch_today(config: Config | None = None) -> list[Event]:
 def fetch_week(config: Config | None = None) -> list[Event]:
     """Fetch this week's events."""
     return fetch_all_events(config, days=7)
+
+
+@dataclass
+class TimeSlot:
+    """A free time slot."""
+
+    start: datetime
+    end: datetime
+
+    def duration_minutes(self) -> int:
+        return int((self.end - self.start).total_seconds() / 60)
+
+    def format(self) -> str:
+        return f"{self.start.strftime('%H:%M')}-{self.end.strftime('%H:%M')} ({self.duration_minutes()} min)"
+
+
+def find_free_slots(
+    events: list[Event],
+    work_start: int = 9,
+    work_end: int = 17,
+    min_duration: int = 30,
+) -> list[TimeSlot]:
+    """
+    Find free time slots between events during work hours.
+
+    Args:
+        events: List of calendar events (should be for a single day)
+        work_start: Start of work day (hour, 24h format)
+        work_end: End of work day (hour, 24h format)
+        min_duration: Minimum slot duration in minutes
+
+    Returns:
+        List of free TimeSlots
+    """
+    if not events:
+        return []
+
+    # Get the date from first event
+    target_date = events[0].start.date()
+
+    # Work hours boundaries
+    day_start = datetime(target_date.year, target_date.month, target_date.day, work_start, 0)
+    day_end = datetime(target_date.year, target_date.month, target_date.day, work_end, 0)
+
+    # Filter to timed events only (not all-day) and sort by start
+    timed_events = sorted(
+        [e for e in events if not e.all_day and e.end is not None],
+        key=lambda e: e.start
+    )
+
+    free_slots = []
+    current_time = day_start
+
+    for event in timed_events:
+        event_start = event.start
+        event_end = event.end or event.start
+
+        # Skip events outside work hours
+        if event_end <= day_start or event_start >= day_end:
+            continue
+
+        # Clamp to work hours
+        event_start = max(event_start, day_start)
+        event_end = min(event_end, day_end)
+
+        # Gap before this event?
+        if event_start > current_time:
+            gap = TimeSlot(start=current_time, end=event_start)
+            if gap.duration_minutes() >= min_duration:
+                free_slots.append(gap)
+
+        # Move current time past this event
+        current_time = max(current_time, event_end)
+
+    # Gap after last event?
+    if current_time < day_end:
+        gap = TimeSlot(start=current_time, end=day_end)
+        if gap.duration_minutes() >= min_duration:
+            free_slots.append(gap)
+
+    return free_slots

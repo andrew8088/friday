@@ -46,6 +46,42 @@ class Task:
             project_name=project_name,
         )
 
+    def is_important(self) -> bool:
+        """High priority (3+) = important."""
+        return self.priority >= 3
+
+    def is_urgent(self, urgent_days: int = 3) -> bool:
+        """Due within N days or overdue = urgent."""
+        if not self.due_date:
+            return False
+        days_until = (self.due_date - date.today()).days
+        return days_until <= urgent_days
+
+    def quadrant(self, urgent_days: int = 3) -> int:
+        """
+        Eisenhower quadrant (1-4).
+        Q1: Urgent + Important (Do)
+        Q2: Not Urgent + Important (Schedule)
+        Q3: Urgent + Not Important (Delegate)
+        Q4: Not Urgent + Not Important (Delete)
+        """
+        important = self.is_important()
+        urgent = self.is_urgent(urgent_days)
+
+        if urgent and important:
+            return 1
+        elif not urgent and important:
+            return 2
+        elif urgent and not important:
+            return 3
+        else:
+            return 4
+
+    def quadrant_label(self, urgent_days: int = 3) -> str:
+        """Human-readable quadrant label."""
+        labels = {1: "Do", 2: "Schedule", 3: "Delegate", 4: "Delete"}
+        return labels[self.quadrant(urgent_days)]
+
 
 class TickTickClient:
     """Client for TickTick API with automatic token refresh."""
