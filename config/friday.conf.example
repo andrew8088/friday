@@ -35,5 +35,12 @@ DEEP_WORK_HOURS="09:00-11:00,14:00-16:00"
 # If the file already exists, briefing will be appended
 DAILY_JOURNAL_DIR=""  # Leave empty to use ~/friday/journal/daily
 
+# Daily recaps will be saved as YYYY-MM-DD.md in this directory
+DAILY_RECAP_DIR=""  # Leave empty to use ~/friday/recaps/daily
+
+# How recent a recap must be (in hours) to include in morning briefing
+# If yesterday's recap is older than this, only patterns from recent recaps are shown
+RECAP_FRESHNESS_HOURS="36"
+
 # Review schedule
 WEEKLY_REVIEW_DAY="Sunday"
