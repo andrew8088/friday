@@ -1,0 +1,39 @@
+# ~/friday/config/friday.conf
+# Friday configuration
+# Copy this file to friday.conf and fill in your values
+
+# TickTick API credentials (get from developer.ticktick.com)
+TICKTICK_CLIENT_ID="your_client_id_here"
+TICKTICK_CLIENT_SECRET="your_client_secret_here"
+TICKTICK_ACCESS_TOKEN=""
+
+# Calendar sources
+# icalPal is used by default for iCloud/macOS calendars
+# Set to true to also include Google Calendar via gcalcli
+USE_GCALCLI="false"
+
+# Calendar filters (comma-separated)
+# Leave empty to include all calendars
+ICALPAL_INCLUDE_CALENDARS="Home,Work"
+ICALPAL_EXCLUDE_CALENDARS=""
+
+# Time zone
+TIMEZONE="America/Toronto"
+
+# Work hours (when to suggest work tasks)
+WORK_HOURS="08:00-17:00"
+
+# Task list categorization (comma-separated TickTick project names)
+WORK_TASK_LISTS="Work"
+PERSONAL_TASK_LISTS="Personal,Learning"
+
+# Deep work preferences
+DEEP_WORK_HOURS="09:00-11:00,14:00-16:00"
+
+# Output directories
+# Daily briefings will be saved as YYYY-MM-DD.md in this directory
+# If the file already exists, briefing will be appended
+DAILY_JOURNAL_DIR=""  # Leave empty to use ~/friday/journal/daily
+
+# Review schedule
+WEEKLY_REVIEW_DAY="Sunday"

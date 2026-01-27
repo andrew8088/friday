@@ -169,8 +169,15 @@ def calendar_week(as_json: bool = False):
 @main.command()
 def morning():
     """Generate daily briefing."""
+    config = load_config()
     today = date.today().isoformat()
-    journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    # Use configured journal dir or default
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
     journal_dir.mkdir(parents=True, exist_ok=True)
     output_file = journal_dir / f"{today}.md"
 
@@ -186,7 +193,14 @@ def morning():
             check=True,
         )
         output = result.stdout
-        output_file.write_text(output)
+
+        # Append if file exists, otherwise create
+        if output_file.exists():
+            with open(output_file, "a") as f:
+                f.write(f"\n\n---\n\n{output}")
+        else:
+            output_file.write_text(output)
+
         click.echo(output)
     except subprocess.CalledProcessError as e:
         click.echo(f"Error running claude: {e.stderr}", err=True)

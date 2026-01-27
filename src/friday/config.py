@@ -25,7 +25,7 @@ class Config:
     work_task_lists: list[str] = field(default_factory=list)
     personal_task_lists: list[str] = field(default_factory=list)
     deep_work_hours: list[str] = field(default_factory=lambda: ["09:00-11:00", "14:00-16:00"])
-    no_meetings_before: str = "10:00"
+    daily_journal_dir: str = ""
     weekly_review_day: str = "Sunday"
 
 
@@ -125,8 +125,8 @@ def load_config() -> Config:
                 config.personal_task_lists = [c.strip() for c in value.split(",") if c.strip()]
             case "deep_work_hours":
                 config.deep_work_hours = [h.strip() for h in value.split(",") if h.strip()]
-            case "no_meetings_before":
-                config.no_meetings_before = value
+            case "daily_journal_dir":
+                config.daily_journal_dir = value
             case "weekly_review_day":
                 config.weekly_review_day = value
 
