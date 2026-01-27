@@ -102,14 +102,16 @@ def inbox(as_json: bool):
             click.echo(f"• {task.title}")
 
 
-@main.command()
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-@click.option("--days", default=1, help="Number of days to show")
-def calendar(as_json: bool, days: int):
+@main.group(invoke_without_command=True)
+@click.pass_context
+def calendar(ctx):
     """Show calendar events."""
-    config = load_config()
-    events = cal.fetch_all_events(config, days=days)
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(calendar_day)
 
+
+def _show_events(events: list, as_json: bool, empty_msg: str = "No events.") -> None:
+    """Shared event display logic."""
     if as_json:
         click.echo(
             json.dumps(
@@ -129,7 +131,7 @@ def calendar(as_json: bool, days: int):
         )
     else:
         if not events:
-            click.echo("No events today.")
+            click.echo(empty_msg)
             return
 
         current_date = None
@@ -144,6 +146,24 @@ def calendar(as_json: bool, days: int):
             time_str = event.format_time()
             loc = f" @ {event.location}" if event.location else ""
             click.echo(f"  {time_str:8} {event.title}{loc}")
+
+
+@calendar.command("day")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def calendar_day(as_json: bool = False):
+    """Show today's events."""
+    config = load_config()
+    events = cal.fetch_all_events(config, days=1)
+    _show_events(events, as_json, "No events today.")
+
+
+@calendar.command("week")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def calendar_week(as_json: bool = False):
+    """Show this week's events."""
+    config = load_config()
+    events = cal.fetch_all_events(config, days=7)
+    _show_events(events, as_json, "No events this week.")
 
 
 @main.command()

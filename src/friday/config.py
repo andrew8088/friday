@@ -81,7 +81,25 @@ def load_config() -> Config:
 
         key, _, value = line.partition("=")
         key = key.strip().lower()
-        value = value.strip().strip('"').strip("'")
+        value = value.strip()
+
+        # Handle quoted values with inline comments: "value" # comment
+        if value.startswith('"'):
+            end_quote = value.find('"', 1)
+            if end_quote != -1:
+                value = value[1:end_quote]
+            else:
+                value = value[1:]
+        elif value.startswith("'"):
+            end_quote = value.find("'", 1)
+            if end_quote != -1:
+                value = value[1:end_quote]
+            else:
+                value = value[1:]
+        else:
+            # Unquoted: strip inline comments
+            if "#" in value:
+                value = value.split("#")[0].strip()
 
         match key:
             case "ticktick_client_id":
