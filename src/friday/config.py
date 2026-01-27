@@ -21,6 +21,9 @@ class Config:
     icalpal_include_calendars: list[str] = field(default_factory=list)
     icalpal_exclude_calendars: list[str] = field(default_factory=list)
     timezone: str = "America/Toronto"
+    work_hours: str = "09:00-17:00"
+    work_task_lists: list[str] = field(default_factory=list)
+    personal_task_lists: list[str] = field(default_factory=list)
     deep_work_hours: list[str] = field(default_factory=lambda: ["09:00-11:00", "14:00-16:00"])
     no_meetings_before: str = "10:00"
     weekly_review_day: str = "Sunday"
@@ -114,6 +117,12 @@ def load_config() -> Config:
                 config.icalpal_exclude_calendars = [c.strip() for c in value.split(",") if c.strip()]
             case "timezone":
                 config.timezone = value
+            case "work_hours":
+                config.work_hours = value
+            case "work_task_lists":
+                config.work_task_lists = [c.strip() for c in value.split(",") if c.strip()]
+            case "personal_task_lists":
+                config.personal_task_lists = [c.strip() for c in value.split(",") if c.strip()]
             case "deep_work_hours":
                 config.deep_work_hours = [h.strip() for h in value.split(",") if h.strip()]
             case "no_meetings_before":

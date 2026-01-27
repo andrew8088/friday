@@ -241,19 +241,45 @@ def triage():
 
 def compile_briefing() -> str:
     """Compile the daily briefing prompt."""
+    from datetime import datetime
+
     config = load_config()
     today = date.today()
+    now = datetime.now()
 
-    # Fetch data
+    # Parse work hours
+    work_start_str, work_end_str = config.work_hours.split("-")
+    work_start = int(work_start_str.split(":")[0])
+    work_end = int(work_end_str.split(":")[0])
+    is_work_hours = work_start <= now.hour < work_end
+
+    # Fetch and categorize tasks
+    work_tasks_md = ""
+    personal_tasks_md = ""
+    other_tasks_md = ""
+
     try:
         client = TickTickClient()
         tasks = client.get_priority_tasks()
-        tasks_md = "\n".join(
-            f"- [{t.priority}] {t.title} (due: {t.due_date or 'no date'}, project: {t.project_name})"
-            for t in tasks
-        ) or "No priority tasks."
+
+        work_tasks = [t for t in tasks if t.project_name in config.work_task_lists]
+        personal_tasks = [t for t in tasks if t.project_name in config.personal_task_lists]
+        other_tasks = [t for t in tasks if t.project_name not in config.work_task_lists and t.project_name not in config.personal_task_lists]
+
+        def format_tasks(task_list):
+            return "\n".join(
+                f"- [{t.priority}] {t.title} (due: {t.due_date or 'no date'})"
+                for t in task_list
+            ) or "None"
+
+        work_tasks_md = format_tasks(work_tasks)
+        personal_tasks_md = format_tasks(personal_tasks)
+        other_tasks_md = format_tasks(other_tasks)
+
     except AuthenticationError:
-        tasks_md = "(TickTick not authenticated - run 'friday auth')"
+        work_tasks_md = "(TickTick not authenticated - run 'friday auth')"
+        personal_tasks_md = ""
+        other_tasks_md = ""
 
     events = cal.fetch_today(config)
     calendar_md = "\n".join(
@@ -277,14 +303,22 @@ def compile_briefing() -> str:
 
     conflicts_md = "\n".join(conflicts) if conflicts else "None"
 
+    # Context for Claude
+    time_context = "during work hours" if is_work_hours else "outside work hours"
+    task_priority_hint = (
+        f"Currently {time_context} ({config.work_hours}). "
+        f"Prioritize {'work tasks (from {})'.format(', '.join(config.work_task_lists)) if is_work_hours else 'personal tasks (from {})'.format(', '.join(config.personal_task_lists))} accordingly."
+    )
+
     template = FRIDAY_HOME / "templates" / "daily-briefing.md"
     if template.exists():
         prompt = template.read_text()
         prompt = prompt.replace("{{DATE}}", today.isoformat())
         prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
-        prompt = prompt.replace("{{TASKS}}", tasks_md)
+        prompt = prompt.replace("{{TASKS}}", f"### Work Tasks ({', '.join(config.work_task_lists)})\n{work_tasks_md}\n\n### Personal Tasks ({', '.join(config.personal_task_lists)})\n{personal_tasks_md}\n\n### Other\n{other_tasks_md}")
         prompt = prompt.replace("{{CALENDAR}}", calendar_md)
         prompt = prompt.replace("{{CONFLICTS}}", conflicts_md)
+        prompt = prompt.replace("{{TIME_CONTEXT}}", task_priority_hint)
         return prompt
 
     # Fallback inline template
@@ -293,18 +327,27 @@ def compile_briefing() -> str:
 ## Date
 {today.strftime("%A, %B %d, %Y")}
 
+## Context
+{task_priority_hint}
+
 ## Today's Calendar
 {calendar_md}
 
-## Priority Tasks
-{tasks_md}
+## Work Tasks ({', '.join(config.work_task_lists)})
+{work_tasks_md}
+
+## Personal Tasks ({', '.join(config.personal_task_lists)})
+{personal_tasks_md}
+
+## Other Tasks
+{other_tasks_md}
 
 ## Deep Work Conflicts
 {conflicts_md}
 
 ## Instructions
 1. Summarize the day ahead
-2. Identify the top 3 priorities
+2. Identify the top 3 priorities based on current time context
 3. Flag any scheduling conflicts
 4. Suggest time blocks for focused work
 5. Be direct and concise
