@@ -280,6 +280,31 @@ def triage():
 
 
 @main.command()
+@click.option("--debug", is_flag=True, help="Enable debug logging")
+def bot(debug: bool):
+    """Run the Telegram bot."""
+    import logging
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    try:
+        from .telegram_bot import run_bot
+        click.echo("Starting Friday Telegram bot...")
+        click.echo("Press Ctrl+C to stop")
+        run_bot()
+    except ImportError as e:
+        click.echo(f"Error: Missing dependencies. Run 'pip install python-telegram-bot apscheduler'", err=True)
+        click.echo(f"Details: {e}", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Configuration error: {e}", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\nBot stopped.")
+
+
+@main.command()
 @click.option("--date", "-d", "target_date", default=None,
               help="Date to recap (YYYY-MM-DD), defaults to today")
 @click.option("--deep", is_flag=True, help="Launch interactive deep mode with Claude")

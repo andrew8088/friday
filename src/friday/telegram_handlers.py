@@ -1,0 +1,411 @@
+"""Telegram command handlers."""
+
+import subprocess
+from datetime import date
+from pathlib import Path
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
+
+from .config import load_config, FRIDAY_HOME
+from .recap import Recap, RecapMode, determine_recap_mode, load_recap
+from .telegram_states import RecapStates
+from . import calendar as cal
+from .ticktick import TickTickClient, AuthenticationError
+
+
+# ============== Simple Commands ==============
+
+
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command."""
+    await update.message.reply_text(
+        "Hey! I'm Friday, your personal assistant.\n\n"
+        "Commands:\n"
+        "/briefing - Get your morning briefing\n"
+        "/recap - Record your daily recap\n"
+        "/status - Quick status check\n"
+        "/help - Show all commands"
+    )
+
+
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command."""
+    await update.message.reply_text(
+        "*Friday Commands*\n\n"
+        "/briefing - Generate morning briefing with tasks and calendar\n"
+        "/recap - Interactive daily reflection\n"
+        "/status - Today's calendar and top tasks\n"
+        "/cancel - Cancel current operation\n",
+        parse_mode="Markdown",
+    )
+
+
+async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /status command - quick overview."""
+    config = load_config()
+    today = date.today()
+
+    # Get calendar
+    try:
+        events = cal.fetch_today(config)
+        calendar_text = (
+            "\n".join(f"  {e.format_time()} {e.title}" for e in events[:5])
+            or "  No events"
+        )
+    except Exception:
+        calendar_text = "  (Calendar unavailable)"
+
+    # Get tasks
+    try:
+        client = TickTickClient()
+        tasks = client.get_priority_tasks()[:5]
+        tasks_text = (
+            "\n".join(f"  - {t.title}" for t in tasks) or "  No priority tasks"
+        )
+    except AuthenticationError:
+        tasks_text = "  (TickTick not connected)"
+
+    # Check recap status
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+    recap_exists = load_recap(today, recap_dir) is not None
+    recap_status = "Done" if recap_exists else "Pending"
+
+    await update.message.reply_text(
+        f"*Status for {today.strftime('%A, %b %d')}*\n\n"
+        f"*Calendar:*\n{calendar_text}\n\n"
+        f"*Priority Tasks:*\n{tasks_text}\n\n"
+        f"*Today's Recap:* {recap_status}",
+        parse_mode="Markdown",
+    )
+
+
+async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /briefing command."""
+    await update.message.reply_text("Generating your briefing...")
+
+    # Import here to avoid circular imports
+    from .cli import compile_briefing
+
+    prompt = compile_briefing()
+
+    try:
+        # Run through Claude
+        result = subprocess.run(
+            ["claude", "-p", "-"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            briefing = result.stdout.strip()
+            # Telegram has 4096 char limit, split if needed
+            if len(briefing) > 4000:
+                for i in range(0, len(briefing), 4000):
+                    await update.message.reply_text(briefing[i : i + 4000])
+            else:
+                await update.message.reply_text(briefing)
+        else:
+            await update.message.reply_text(
+                "Failed to generate briefing. Check logs."
+            )
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("Briefing generation timed out.")
+    except FileNotFoundError:
+        await update.message.reply_text("Claude CLI not found on server.")
+
+
+# ============== Recap Conversation ==============
+
+
+async def recap_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the recap conversation."""
+    config = load_config()
+    today = date.today()
+
+    # Determine recap directory
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+
+    # Store recap_dir in context for later use
+    context.user_data["recap_dir"] = str(recap_dir)
+
+    # Check if recap already exists
+    if load_recap(today, recap_dir):
+        keyboard = [
+            [
+                InlineKeyboardButton("Yes, overwrite", callback_data="recap_overwrite"),
+                InlineKeyboardButton("No, cancel", callback_data="recap_cancel"),
+            ]
+        ]
+        await update.message.reply_text(
+            f"You already have a recap for {today}. Overwrite?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return RecapStates.CONFIRM_OVERWRITE
+
+    # Initialize recap data in context
+    context.user_data["recap"] = {
+        "date": today.isoformat(),
+        "wins": [],
+        "blockers": [],
+        "energy": None,
+        "tomorrow_focus": "",
+    }
+
+    return await _prompt_for_wins(update, context)
+
+
+async def _prompt_for_wins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the wins prompt with quick options."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Good focus", callback_data="win:Good focus block"),
+            InlineKeyboardButton("Shipped something", callback_data="win:Shipped feature"),
+        ],
+        [
+            InlineKeyboardButton("Productive meeting", callback_data="win:Productive meeting"),
+            InlineKeyboardButton("Cleared backlog", callback_data="win:Cleared backlog"),
+        ],
+        [InlineKeyboardButton("Done with wins ->", callback_data="wins_done")],
+    ]
+
+    message = (
+        "*Daily Recap*\n\n"
+        "What went well today?\n"
+        "_Tap quick options or type your own (comma-separated)_"
+    )
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            message,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    else:
+        await update.message.reply_text(
+            message,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    return RecapStates.WINS
+
+
+async def recap_confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle overwrite confirmation."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "recap_cancel":
+        await query.edit_message_text("Recap cancelled.")
+        return ConversationHandler.END
+
+    if query.data == "recap_overwrite":
+        today = date.today()
+        context.user_data["recap"] = {
+            "date": today.isoformat(),
+            "wins": [],
+            "blockers": [],
+            "energy": None,
+            "tomorrow_focus": "",
+        }
+        return await _prompt_for_wins(update, context)
+
+    return RecapStates.CONFIRM_OVERWRITE
+
+
+async def recap_wins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle wins input."""
+    # Handle callback (button tap)
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "wins_done":
+            # Move to blockers
+            keyboard = [
+                [
+                    InlineKeyboardButton("Meetings", callback_data="blocker:Too many meetings"),
+                    InlineKeyboardButton("Interruptions", callback_data="blocker:Interruptions"),
+                ],
+                [
+                    InlineKeyboardButton("Low energy", callback_data="blocker:Low energy"),
+                    InlineKeyboardButton("Unclear priorities", callback_data="blocker:Unclear priorities"),
+                ],
+                [InlineKeyboardButton("No blockers ->", callback_data="blockers_done")],
+            ]
+            wins_count = len(context.user_data["recap"]["wins"])
+            await query.edit_message_text(
+                f"Wins recorded: {wins_count}\n\n"
+                "What didn't go as planned?\n"
+                "_Tap quick options or type your own_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return RecapStates.BLOCKERS
+
+        if query.data.startswith("win:"):
+            win = query.data[4:]
+            context.user_data["recap"]["wins"].append(win)
+            await query.answer(f"Added: {win}")
+            return RecapStates.WINS
+
+    # Handle text input
+    if update.message:
+        text = update.message.text.strip()
+        wins = [w.strip() for w in text.split(",") if w.strip()]
+        context.user_data["recap"]["wins"].extend(wins)
+
+        keyboard = [
+            [InlineKeyboardButton("Done with wins ->", callback_data="wins_done")],
+        ]
+        await update.message.reply_text(
+            f"Added {len(wins)} win(s). Add more or tap done.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return RecapStates.WINS
+
+    return RecapStates.WINS
+
+
+async def recap_blockers_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle blockers input."""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "blockers_done":
+            # Move to energy
+            keyboard = [
+                [
+                    InlineKeyboardButton("High", callback_data="energy:high"),
+                    InlineKeyboardButton("Medium", callback_data="energy:medium"),
+                    InlineKeyboardButton("Low", callback_data="energy:low"),
+                ],
+            ]
+            blockers_count = len(context.user_data["recap"]["blockers"])
+            await query.edit_message_text(
+                f"Blockers recorded: {blockers_count}\n\n"
+                "How was your energy today?",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return RecapStates.ENERGY
+
+        if query.data.startswith("blocker:"):
+            blocker = query.data[8:]
+            context.user_data["recap"]["blockers"].append(blocker)
+            await query.answer(f"Added: {blocker}")
+            return RecapStates.BLOCKERS
+
+    if update.message:
+        text = update.message.text.strip()
+        blockers = [b.strip() for b in text.split(",") if b.strip()]
+        context.user_data["recap"]["blockers"].extend(blockers)
+
+        keyboard = [
+            [InlineKeyboardButton("Done with blockers ->", callback_data="blockers_done")],
+        ]
+        await update.message.reply_text(
+            f"Added {len(blockers)} blocker(s). Add more or tap done.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return RecapStates.BLOCKERS
+
+    return RecapStates.BLOCKERS
+
+
+async def recap_energy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle energy level selection."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data.startswith("energy:"):
+        energy = query.data[7:]
+        context.user_data["recap"]["energy"] = energy
+
+        await query.edit_message_text(
+            f"Energy: {energy}\n\n"
+            "What's your one focus for tomorrow?\n"
+            "_Type a brief intention_",
+            parse_mode="Markdown",
+        )
+        return RecapStates.TOMORROW
+
+    return RecapStates.ENERGY
+
+
+async def recap_tomorrow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle tomorrow's focus and save recap."""
+    text = update.message.text.strip()
+    context.user_data["recap"]["tomorrow_focus"] = text
+
+    # Build and save recap
+    recap_data = context.user_data["recap"]
+    config = load_config()
+
+    if config.daily_recap_dir:
+        recap_dir = Path(config.daily_recap_dir).expanduser()
+    else:
+        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+    recap_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine mode
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    try:
+        TickTickClient()
+        ticktick_available = True
+    except AuthenticationError:
+        ticktick_available = False
+
+    recap_date = date.fromisoformat(recap_data["date"])
+    mode = determine_recap_mode(recap_date, journal_dir, ticktick_available)
+
+    recap = Recap(
+        date=recap_date,
+        mode=mode,
+        wins=recap_data["wins"],
+        blockers=recap_data["blockers"],
+        energy=recap_data["energy"],
+        tomorrow_focus=recap_data["tomorrow_focus"],
+    )
+
+    output_file = recap_dir / f"{recap_data['date']}.md"
+    output_file.write_text(recap.to_markdown())
+
+    # Summary message
+    wins_str = ", ".join(recap_data["wins"][:3]) or "None"
+    blockers_str = ", ".join(recap_data["blockers"][:3]) or "None"
+
+    await update.message.reply_text(
+        f"*Recap saved!*\n\n"
+        f"*Wins:* {wins_str}\n"
+        f"*Blockers:* {blockers_str}\n"
+        f"*Energy:* {recap_data['energy']}\n"
+        f"*Tomorrow:* {text}",
+        parse_mode="Markdown",
+    )
+
+    # Clear user data
+    context.user_data.pop("recap", None)
+    context.user_data.pop("recap_dir", None)
+    return ConversationHandler.END
+
+
+async def recap_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel the recap conversation."""
+    context.user_data.pop("recap", None)
+    context.user_data.pop("recap_dir", None)
+    await update.message.reply_text("Recap cancelled.")
+    return ConversationHandler.END
