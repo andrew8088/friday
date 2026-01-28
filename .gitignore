@@ -1,5 +1,6 @@
 # Cached API responses
 data/*.json
+logs
 
 # Configuration with secrets
 config/friday.conf
