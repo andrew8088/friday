@@ -25,6 +25,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/briefing - Get your morning briefing\n"
+        "/journal - View today's journal\n"
         "/recap - Record your daily recap\n"
         "/status - Quick status check\n"
         "/version - Check bot version\n"
@@ -39,6 +40,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/briefing - Generate morning briefing with tasks and calendar\n"
+        "/journal - View today's journal entry\n"
         "/recap - Interactive daily reflection\n"
         "/status - Today's calendar and top tasks\n"
         "/version - Check bot version\n"
@@ -175,6 +177,40 @@ async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Unable to get version info.")
     except Exception as e:
         await update.message.reply_text(f"Error getting version: {e}")
+
+
+async def journal_read_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /journal command - display today's journal if it exists."""
+    config = load_config()
+    today = date.today()
+
+    # Determine journal directory
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+
+    if not journal_file.exists():
+        await update.message.reply_text(f"No journal entry for {today.strftime('%A, %b %d')}.")
+        return
+
+    content = journal_file.read_text().strip()
+    if not content:
+        await update.message.reply_text(f"Journal for {today.strftime('%A, %b %d')} is empty.")
+        return
+
+    header = f"*Journal for {today.strftime('%A, %b %d')}*\n\n"
+    message = header + content
+
+    # Telegram has 4096 char limit, split if needed
+    if len(message) > 4000:
+        await update.message.reply_text(header, parse_mode="Markdown")
+        for i in range(0, len(content), 4000):
+            await update.message.reply_text(content[i : i + 4000])
+    else:
+        await update.message.reply_text(message, parse_mode="Markdown")
 
 
 async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
