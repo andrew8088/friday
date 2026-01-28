@@ -22,7 +22,19 @@ class CompositeCalendarAdapter:
             include_calendars=config.icalpal_include_calendars or None,
             exclude_calendars=config.icalpal_exclude_calendars or None,
         )
-        self._gcalcli = GcalcliAdapter() if config.use_gcalcli else None
+        # Support multiple gcalcli accounts
+        self._gcalcli_adapters: list[GcalcliAdapter] = []
+        if config.gcalcli_accounts:
+            for account in config.gcalcli_accounts:
+                self._gcalcli_adapters.append(
+                    GcalcliAdapter(
+                        config_folder=account.config_folder,
+                        label=account.label,
+                    )
+                )
+        elif config.use_gcalcli:
+            # Backwards compatibility: single default account
+            self._gcalcli_adapters.append(GcalcliAdapter())
 
     def fetch_events(self, days: int = 1) -> list[Event]:
         """Fetch events from all configured sources for the next N days."""
@@ -31,9 +43,9 @@ class CompositeCalendarAdapter:
         # Primary: icalPal (macOS Calendar)
         events.extend(self._icalpal.fetch_events(days))
 
-        # Secondary: gcalcli (Google Calendar) if enabled
-        if self._gcalcli:
-            events.extend(self._gcalcli.fetch_events(days))
+        # Secondary: gcalcli (Google Calendar accounts)
+        for adapter in self._gcalcli_adapters:
+            events.extend(adapter.fetch_events(days))
 
         # Filter to date range and sort
         today = date.today()
@@ -48,7 +60,7 @@ class CompositeCalendarAdapter:
 
         events.extend(self._icalpal.fetch_day(target_date))
 
-        if self._gcalcli:
-            events.extend(self._gcalcli.fetch_day(target_date))
+        for adapter in self._gcalcli_adapters:
+            events.extend(adapter.fetch_day(target_date))
 
         return sort_events_by_start(events)

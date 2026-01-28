@@ -12,12 +12,21 @@ DATA_DIR = FRIDAY_HOME / "data"
 
 
 @dataclass
+class GcalAccount:
+    """A Google Calendar account configuration."""
+
+    config_folder: str
+    label: str | None = None
+
+
+@dataclass
 class Config:
     """Friday configuration."""
 
     ticktick_client_id: str = ""
     ticktick_client_secret: str = ""
     use_gcalcli: bool = False
+    gcalcli_accounts: list[GcalAccount] = field(default_factory=list)
     icalpal_include_calendars: list[str] = field(default_factory=list)
     icalpal_exclude_calendars: list[str] = field(default_factory=list)
     timezone: str = "America/Toronto"
@@ -116,6 +125,19 @@ def load_config() -> Config:
                 config.ticktick_client_secret = value
             case "use_gcalcli":
                 config.use_gcalcli = value.lower() == "true"
+            case "gcalcli_accounts":
+                # Format: "path1:label1,path2:label2" or "path1,path2"
+                accounts = []
+                for entry in value.split(","):
+                    entry = entry.strip()
+                    if not entry:
+                        continue
+                    if ":" in entry:
+                        folder, label = entry.split(":", 1)
+                        accounts.append(GcalAccount(folder.strip(), label.strip()))
+                    else:
+                        accounts.append(GcalAccount(entry))
+                config.gcalcli_accounts = accounts
             case "icalpal_include_calendars":
                 config.icalpal_include_calendars = [c.strip() for c in value.split(",") if c.strip()]
             case "icalpal_exclude_calendars":

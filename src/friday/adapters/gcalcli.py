@@ -14,9 +14,26 @@ class GcalcliAdapter:
     gcalcli subprocess adapter.
 
     Fetches events from Google Calendar via the gcalcli CLI tool.
+    Supports multiple Google accounts via separate config folders.
     """
 
-    def __init__(self, timeout: int = 30):
+    def __init__(
+        self,
+        config_folder: str | None = None,
+        label: str | None = None,
+        timeout: int = 30,
+    ):
+        """
+        Initialize the gcalcli adapter.
+
+        Args:
+            config_folder: Path to gcalcli config folder (for multi-account support).
+                          Each account needs its own folder with OAuth credentials.
+            label: Optional label to identify this account in event sources.
+            timeout: Command timeout in seconds.
+        """
+        self.config_folder = config_folder
+        self.label = label or (config_folder.split("/")[-1] if config_folder else "Google")
         self.timeout = timeout
 
     def fetch_events(self, days: int = 1) -> list[Event]:
@@ -42,6 +59,8 @@ class GcalcliAdapter:
                 "--details",
                 "length",
             ]
+            if self.config_folder:
+                cmd.extend(["--config-folder", self.config_folder])
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -87,7 +106,7 @@ class GcalcliAdapter:
                         start=start,
                         end=end,
                         location=parts[5] if len(parts) > 5 else "",
-                        calendar="Google",
+                        calendar=self.label,
                         all_day=False,
                         source="gcalcli",
                     )
