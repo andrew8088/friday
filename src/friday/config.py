@@ -29,6 +29,11 @@ class Config:
     weekly_review_day: str = "Sunday"
     daily_recap_dir: str = ""
     recap_freshness_hours: int = 36
+    # Telegram bot settings
+    telegram_bot_token: str = ""
+    telegram_allowed_users: list[int] = field(default_factory=list)
+    telegram_briefing_time: str = "07:30"
+    telegram_recap_reminder_time: str = "21:00"
 
 
 @dataclass
@@ -135,5 +140,13 @@ def load_config() -> Config:
                 config.daily_recap_dir = value
             case "recap_freshness_hours":
                 config.recap_freshness_hours = int(value) if value else 36
+            case "telegram_bot_token":
+                config.telegram_bot_token = value
+            case "telegram_allowed_users":
+                config.telegram_allowed_users = [int(u.strip()) for u in value.split(",") if u.strip()]
+            case "telegram_briefing_time":
+                config.telegram_briefing_time = value
+            case "telegram_recap_reminder_time":
+                config.telegram_recap_reminder_time = value
 
     return config

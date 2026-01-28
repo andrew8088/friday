@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.friday.telegram-bot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/andrew/friday/.venv/bin/friday</string>
+        <string>bot</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/andrew/friday</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/andrew/friday/logs/telegram-bot.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/andrew/friday/logs/telegram-bot.error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>FRIDAY_HOME</key>
+        <string>/Users/andrew/friday</string>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>
