@@ -17,7 +17,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from .config import load_config, FRIDAY_HOME
-from .recap import load_recap
 from .telegram_handlers import (
     start_handler,
     help_handler,
@@ -207,13 +206,16 @@ async def send_recap_reminder(bot: Bot, user_ids: list[int], config):
     """Send evening recap reminder if no recap exists for today."""
     today = date.today()
 
-    if config.daily_recap_dir:
-        recap_dir = Path(config.daily_recap_dir).expanduser()
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
     else:
-        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
 
-    # Only remind if no recap exists for today
-    if load_recap(today, recap_dir) is None:
+    # Only remind if no recap exists in journal for today
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+    recap_exists = journal_file.exists() and "## Evening Recap" in journal_file.read_text()
+
+    if not recap_exists:
         logger.info("Sending recap reminder")
         for user_id in user_ids:
             try:

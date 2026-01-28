@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -158,33 +158,6 @@ class Recap:
             reflection=reflection,
             tomorrow_focus=tomorrow_focus,
         )
-
-
-def load_recap(target_date: date, recap_dir: Path) -> Recap | None:
-    """Load recap for a specific date, or None if missing."""
-    recap_file = recap_dir / f"{target_date.isoformat()}.md"
-    if not recap_file.exists():
-        return None
-
-    try:
-        return Recap.from_markdown(recap_file.read_text())
-    except (ValueError, KeyError):
-        return None
-
-
-def load_recent_recaps(days: int, recap_dir: Path) -> list[Recap]:
-    """Load recaps from the last N days (excludes today)."""
-    recaps = []
-    today = date.today()
-
-    for i in range(1, days + 1):
-        target = today - timedelta(days=i)
-        recap = load_recap(target, recap_dir)
-        if recap:
-            recaps.append(recap)
-
-    # Return in chronological order (oldest first)
-    return list(reversed(recaps))
 
 
 def determine_recap_mode(

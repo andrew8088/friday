@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from .config import load_config, FRIDAY_HOME
-from .recap import Recap, RecapMode, determine_recap_mode, load_recap
+from .recap import Recap, RecapMode, determine_recap_mode
 from .telegram_states import RecapStates
 from . import calendar as cal
 from .ticktick import TickTickClient, AuthenticationError
@@ -66,12 +66,13 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except AuthenticationError:
         tasks_text = "  (TickTick not connected)"
 
-    # Check recap status
-    if config.daily_recap_dir:
-        recap_dir = Path(config.daily_recap_dir).expanduser()
+    # Check recap status (now stored in journal)
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
     else:
-        recap_dir = FRIDAY_HOME / "recaps" / "daily"
-    recap_exists = load_recap(today, recap_dir) is not None
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+    recap_exists = journal_file.exists() and "## Evening Recap" in journal_file.read_text()
     recap_status = "Done" if recap_exists else "Pending"
 
     await update.message.reply_text(
@@ -128,25 +129,26 @@ async def recap_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     config = load_config()
     today = date.today()
 
-    # Determine recap directory
-    if config.daily_recap_dir:
-        recap_dir = Path(config.daily_recap_dir).expanduser()
+    # Determine journal directory
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
     else:
-        recap_dir = FRIDAY_HOME / "recaps" / "daily"
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
 
-    # Store recap_dir in context for later use
-    context.user_data["recap_dir"] = str(recap_dir)
+    # Store journal_dir in context for later use
+    context.user_data["journal_dir"] = str(journal_dir)
 
-    # Check if recap already exists
-    if load_recap(today, recap_dir):
+    # Check if recap already exists in journal
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+    if journal_file.exists() and "## Evening Recap" in journal_file.read_text():
         keyboard = [
             [
-                InlineKeyboardButton("Yes, overwrite", callback_data="recap_overwrite"),
+                InlineKeyboardButton("Yes, add another", callback_data="recap_overwrite"),
                 InlineKeyboardButton("No, cancel", callback_data="recap_cancel"),
             ]
         ]
         await update.message.reply_text(
-            f"You already have a recap for {today}. Overwrite?",
+            f"You already have a recap for {today}. Add another?",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return RecapStates.CONFIRM_OVERWRITE
@@ -351,17 +353,12 @@ async def recap_tomorrow_handler(update: Update, context: ContextTypes.DEFAULT_T
     recap_data = context.user_data["recap"]
     config = load_config()
 
-    if config.daily_recap_dir:
-        recap_dir = Path(config.daily_recap_dir).expanduser()
-    else:
-        recap_dir = FRIDAY_HOME / "recaps" / "daily"
-    recap_dir.mkdir(parents=True, exist_ok=True)
-
-    # Determine mode
+    # Get journal directory
     if config.daily_journal_dir:
         journal_dir = Path(config.daily_journal_dir).expanduser()
     else:
         journal_dir = FRIDAY_HOME / "journal" / "daily"
+    journal_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         TickTickClient()
@@ -381,8 +378,15 @@ async def recap_tomorrow_handler(update: Update, context: ContextTypes.DEFAULT_T
         tomorrow_focus=recap_data["tomorrow_focus"],
     )
 
-    output_file = recap_dir / f"{recap_data['date']}.md"
-    output_file.write_text(recap.to_markdown())
+    # Append to daily journal
+    output_file = journal_dir / f"{recap_data['date']}.md"
+    recap_md = recap.to_markdown()
+
+    if output_file.exists():
+        with open(output_file, "a") as f:
+            f.write(f"\n\n---\n\n## Evening Recap\n\n{recap_md}")
+    else:
+        output_file.write_text(f"## Evening Recap\n\n{recap_md}")
 
     # Summary message
     wins_str = ", ".join(recap_data["wins"][:3]) or "None"
@@ -399,13 +403,13 @@ async def recap_tomorrow_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     # Clear user data
     context.user_data.pop("recap", None)
-    context.user_data.pop("recap_dir", None)
+    context.user_data.pop("journal_dir", None)
     return ConversationHandler.END
 
 
 async def recap_cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel the recap conversation."""
     context.user_data.pop("recap", None)
-    context.user_data.pop("recap_dir", None)
+    context.user_data.pop("journal_dir", None)
     await update.message.reply_text("Recap cancelled.")
     return ConversationHandler.END

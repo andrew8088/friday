@@ -27,8 +27,6 @@ class Config:
     deep_work_hours: list[str] = field(default_factory=lambda: ["09:00-11:00", "14:00-16:00"])
     daily_journal_dir: str = ""
     weekly_review_day: str = "Sunday"
-    daily_recap_dir: str = ""
-    recap_freshness_hours: int = 36
     # Telegram bot settings
     telegram_bot_token: str = ""
     telegram_allowed_users: list[int] = field(default_factory=list)
@@ -136,10 +134,6 @@ def load_config() -> Config:
                 config.daily_journal_dir = value
             case "weekly_review_day":
                 config.weekly_review_day = value
-            case "daily_recap_dir":
-                config.daily_recap_dir = value
-            case "recap_freshness_hours":
-                config.recap_freshness_hours = int(value) if value else 36
             case "telegram_bot_token":
                 config.telegram_bot_token = value
             case "telegram_allowed_users":
