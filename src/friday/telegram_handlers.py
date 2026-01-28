@@ -22,6 +22,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hey! I'm Friday, your personal assistant.\n\n"
         "Commands:\n"
+        "/tasks - List priority tasks\n"
+        "/calendar - Today's events\n"
         "/briefing - Get your morning briefing\n"
         "/recap - Record your daily recap\n"
         "/status - Quick status check\n"
@@ -33,12 +35,70 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command."""
     await update.message.reply_text(
         "*Friday Commands*\n\n"
+        "/tasks - List priority tasks\n"
+        "/calendar - Today's events\n"
         "/briefing - Generate morning briefing with tasks and calendar\n"
         "/recap - Interactive daily reflection\n"
         "/status - Today's calendar and top tasks\n"
         "/cancel - Cancel current operation\n",
         parse_mode="Markdown",
     )
+
+
+async def tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /tasks command - list priority tasks."""
+    try:
+        client = TickTickClient()
+        priority_tasks = client.get_priority_tasks()
+    except AuthenticationError:
+        await update.message.reply_text("TickTick not connected. Run `friday auth` on CLI.")
+        return
+
+    if not priority_tasks:
+        await update.message.reply_text("No priority tasks for today.")
+        return
+
+    lines = []
+    for task in priority_tasks:
+        priority_marker = "!" * task.priority if task.priority else " "
+        due = f" (due {task.due_date})" if task.due_date else ""
+        lines.append(f"`[{priority_marker:3}]` {task.title}{due}")
+
+    await update.message.reply_text(
+        "*Priority Tasks*\n\n" + "\n".join(lines),
+        parse_mode="Markdown",
+    )
+
+
+async def calendar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /calendar command - show today's events."""
+    config = load_config()
+
+    try:
+        events = cal.fetch_all_events(config, days=1)
+    except Exception as e:
+        await update.message.reply_text(f"Failed to fetch calendar: {e}")
+        return
+
+    if not events:
+        await update.message.reply_text("No events today.")
+        return
+
+    lines = []
+    current_date = None
+    for event in events:
+        event_date = event.start.date()
+        if event_date != current_date:
+            if current_date is not None:
+                lines.append("")
+            lines.append(f"*{event_date.strftime('%A, %B %d')}*")
+            current_date = event_date
+
+        time_str = event.format_time()
+        loc = f" @ {event.location}" if event.location else ""
+        lines.append(f"  `{time_str:8}` {event.title}{loc}")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
