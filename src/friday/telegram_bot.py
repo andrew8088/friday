@@ -26,6 +26,7 @@ from .telegram_handlers import (
     calendar_handler,
     version_handler,
     journal_handler,
+    journal_read_handler,
     recap_start_handler,
     recap_confirm_handler,
     recap_wins_handler,
@@ -80,6 +81,7 @@ def create_application(config=None) -> Application:
     app.add_handler(CommandHandler("tasks", tasks_handler, filters=auth_filter))
     app.add_handler(CommandHandler("calendar", calendar_handler, filters=auth_filter))
     app.add_handler(CommandHandler("version", version_handler, filters=auth_filter))
+    app.add_handler(CommandHandler("journal", journal_read_handler, filters=auth_filter))
 
     # Recap conversation handler (multi-step)
     recap_conv = ConversationHandler(
