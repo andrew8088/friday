@@ -238,9 +238,12 @@ def run_bot():
     app = create_application(config)
     scheduler = setup_scheduler(app, config)
 
-    # Start scheduler
-    scheduler.start()
-    logger.info("Scheduler started")
+    async def post_init(application: Application) -> None:
+        """Start scheduler after event loop is running."""
+        scheduler.start()
+        logger.info("Scheduler started")
+
+    app.post_init = post_init
 
     # Log startup info
     if config.telegram_allowed_users:
