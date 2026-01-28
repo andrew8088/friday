@@ -27,6 +27,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/briefing - Get your morning briefing\n"
         "/recap - Record your daily recap\n"
         "/status - Quick status check\n"
+        "/version - Check bot version\n"
         "/help - Show all commands"
     )
 
@@ -40,6 +41,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/briefing - Generate morning briefing with tasks and calendar\n"
         "/recap - Interactive daily reflection\n"
         "/status - Today's calendar and top tasks\n"
+        "/version - Check bot version\n"
         "/cancel - Cancel current operation\n",
         parse_mode="Markdown",
     )
@@ -142,6 +144,37 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Today's Recap:* {recap_status}",
         parse_mode="Markdown",
     )
+
+
+async def version_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /version command - show bot version from git."""
+    try:
+        # Get the most recent commit info
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H%n%s%n%ci"],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent,
+            timeout=5,
+        )
+
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            commit_hash = lines[0][:7]  # Short hash
+            message = lines[1]
+            timestamp = lines[2]
+
+            await update.message.reply_text(
+                f"*Friday Bot Version*\n\n"
+                f"Commit: `{commit_hash}`\n"
+                f"Message: {message}\n"
+                f"Date: {timestamp}",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text("Unable to get version info.")
+    except Exception as e:
+        await update.message.reply_text(f"Error getting version: {e}")
 
 
 async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
