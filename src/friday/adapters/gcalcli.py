@@ -21,6 +21,7 @@ class GcalcliAdapter:
         self,
         config_folder: str | None = None,
         label: str | None = None,
+        calendars: list[str] | None = None,
         timeout: int = 30,
     ):
         """
@@ -30,10 +31,12 @@ class GcalcliAdapter:
             config_folder: Path to gcalcli config folder (for multi-account support).
                           Each account needs its own folder with OAuth credentials.
             label: Optional label to identify this account in event sources.
+            calendars: List of calendar names to include. If None, all calendars are fetched.
             timeout: Command timeout in seconds.
         """
         self.config_folder = config_folder
         self.label = label or (config_folder.split("/")[-1] if config_folder else "Google")
+        self.calendars = calendars
         self.timeout = timeout
 
     def fetch_events(self, days: int = 1) -> list[Event]:
@@ -61,6 +64,9 @@ class GcalcliAdapter:
             ]
             if self.config_folder:
                 cmd.extend(["--config-folder", self.config_folder])
+            if self.calendars:
+                for cal in self.calendars:
+                    cmd.extend(["--calendar", cal])
             result = subprocess.run(
                 cmd,
                 capture_output=True,

@@ -30,6 +30,7 @@ class CompositeCalendarAdapter:
                     GcalcliAdapter(
                         config_folder=account.config_folder,
                         label=account.label,
+                        calendars=account.calendars or None,
                     )
                 )
         elif config.use_gcalcli:

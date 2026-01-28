@@ -1,9 +1,12 @@
 """Configuration management for Friday."""
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 FRIDAY_HOME = Path(os.environ.get("FRIDAY_HOME", Path.home() / "friday"))
 CONFIG_FILE = FRIDAY_HOME / "config" / "friday.conf"
@@ -17,6 +20,7 @@ class GcalAccount:
 
     config_folder: str
     label: str | None = None
+    calendars: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -126,17 +130,34 @@ def load_config() -> Config:
             case "use_gcalcli":
                 config.use_gcalcli = value.lower() == "true"
             case "gcalcli_accounts":
-                # Format: "path1:label1,path2:label2" or "path1,path2"
+                # JSON format: [{"config_folder": "...", "label": "...", "calendars": [...]}]
+                # Simple format (backwards compat): "path1:label1,path2:label2"
                 accounts = []
-                for entry in value.split(","):
-                    entry = entry.strip()
-                    if not entry:
-                        continue
-                    if ":" in entry:
-                        folder, label = entry.split(":", 1)
-                        accounts.append(GcalAccount(folder.strip(), label.strip()))
-                    else:
-                        accounts.append(GcalAccount(entry))
+                if value.startswith("["):
+                    # JSON format
+                    try:
+                        data = json.loads(value)
+                        for item in data:
+                            accounts.append(
+                                GcalAccount(
+                                    config_folder=item["config_folder"],
+                                    label=item.get("label"),
+                                    calendars=item.get("calendars", []),
+                                )
+                            )
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"Failed to parse GCALCLI_ACCOUNTS JSON: {e}")
+                else:
+                    # Simple format: "path1:label1,path2:label2"
+                    for entry in value.split(","):
+                        entry = entry.strip()
+                        if not entry:
+                            continue
+                        if ":" in entry:
+                            folder, label = entry.split(":", 1)
+                            accounts.append(GcalAccount(folder.strip(), label.strip()))
+                        else:
+                            accounts.append(GcalAccount(entry))
                 config.gcalcli_accounts = accounts
             case "icalpal_include_calendars":
                 config.icalpal_include_calendars = [c.strip() for c in value.split(",") if c.strip()]

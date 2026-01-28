@@ -71,6 +71,30 @@ class TestGcalcliAdapter:
         assert events[0].calendar == "Work"
         assert events[0].title == "Meeting"
 
+    @patch("friday.adapters.gcalcli.subprocess.run")
+    def test_calendar_filter_passed_to_command(self, mock_run):
+        """Calendar filter is passed to gcalcli command."""
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
+        adapter = GcalcliAdapter(calendars=["Work", "Meetings"])
+        adapter.fetch_day(date(2025, 1, 15))
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd.count("--calendar") == 2
+        assert "Work" in cmd
+        assert "Meetings" in cmd
+
+    @patch("friday.adapters.gcalcli.subprocess.run")
+    def test_no_calendar_filter_when_none(self, mock_run):
+        """No calendar flag when calendars is None."""
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
+        adapter = GcalcliAdapter()
+        adapter.fetch_day(date(2025, 1, 15))
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert "--calendar" not in cmd
+
 
 class TestGcalAccountConfig:
     """Tests for GcalAccount config parsing."""
@@ -114,6 +138,44 @@ class TestGcalAccountConfig:
         assert config.gcalcli_accounts[0].label == "Personal"
         assert config.gcalcli_accounts[1].config_folder == "~/.gcalcli/work"
         assert config.gcalcli_accounts[1].label == "Work"
+
+    def test_parse_json_format_with_calendars(self, tmp_path):
+        """Parse JSON format with calendar filtering."""
+        config_file = tmp_path / "friday.conf"
+        config_file.write_text(
+            'GCALCLI_ACCOUNTS=\'[{"config_folder": "~/.gcalcli/work", "label": "Work", "calendars": ["Work", "Meetings"]}]\''
+        )
+
+        with patch("friday.config.CONFIG_FILE", config_file):
+            config = load_config()
+
+        assert len(config.gcalcli_accounts) == 1
+        assert config.gcalcli_accounts[0].config_folder == "~/.gcalcli/work"
+        assert config.gcalcli_accounts[0].label == "Work"
+        assert config.gcalcli_accounts[0].calendars == ["Work", "Meetings"]
+
+    def test_parse_json_format_multiple_accounts(self, tmp_path):
+        """Parse JSON format with multiple accounts."""
+        config_file = tmp_path / "friday.conf"
+        json_config = '[{"config_folder": "~/.gcalcli/personal", "label": "Personal"}, {"config_folder": "~/.gcalcli/work", "label": "Work", "calendars": ["Work"]}]'
+        config_file.write_text(f"GCALCLI_ACCOUNTS='{json_config}'")
+
+        with patch("friday.config.CONFIG_FILE", config_file):
+            config = load_config()
+
+        assert len(config.gcalcli_accounts) == 2
+        assert config.gcalcli_accounts[0].calendars == []
+        assert config.gcalcli_accounts[1].calendars == ["Work"]
+
+    def test_simple_format_has_empty_calendars(self, tmp_path):
+        """Simple format accounts have empty calendars list."""
+        config_file = tmp_path / "friday.conf"
+        config_file.write_text('GCALCLI_ACCOUNTS="~/.gcalcli/work:Work"')
+
+        with patch("friday.config.CONFIG_FILE", config_file):
+            config = load_config()
+
+        assert config.gcalcli_accounts[0].calendars == []
 
 
 class TestCompositeCalendarMultiAccount:
@@ -163,3 +225,27 @@ class TestCompositeCalendarMultiAccount:
         adapter = CompositeCalendarAdapter(config)
 
         assert len(adapter._gcalcli_adapters) == 0
+
+    def test_passes_calendars_to_adapters(self):
+        """Passes calendar filter to gcalcli adapters."""
+        config = Config(
+            gcalcli_accounts=[
+                GcalAccount("~/.gcalcli/work", "Work", ["Work", "Meetings"]),
+            ]
+        )
+
+        adapter = CompositeCalendarAdapter(config)
+
+        assert adapter._gcalcli_adapters[0].calendars == ["Work", "Meetings"]
+
+    def test_none_calendars_when_empty_list(self):
+        """Empty calendars list becomes None in adapter."""
+        config = Config(
+            gcalcli_accounts=[
+                GcalAccount("~/.gcalcli/work", "Work", []),
+            ]
+        )
+
+        adapter = CompositeCalendarAdapter(config)
+
+        assert adapter._gcalcli_adapters[0].calendars is None
