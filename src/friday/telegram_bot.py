@@ -25,6 +25,7 @@ from .telegram_handlers import (
     tasks_handler,
     calendar_handler,
     version_handler,
+    journal_handler,
     recap_start_handler,
     recap_confirm_handler,
     recap_wins_handler,
@@ -106,6 +107,14 @@ def create_application(config=None) -> Application:
         per_user=True,
     )
     app.add_handler(recap_conv)
+
+    # Handle non-command messages by logging to journal (authorized users only)
+    app.add_handler(
+        MessageHandler(
+            auth_filter & filters.TEXT & ~filters.COMMAND,
+            journal_handler,
+        )
+    )
 
     # Handle unauthorized access attempts
     async def unauthorized_handler(update: Update, context):

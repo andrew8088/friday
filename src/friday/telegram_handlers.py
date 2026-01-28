@@ -214,6 +214,54 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Claude CLI not found on server.")
 
 
+# ============== Journal Logging ==============
+
+
+async def journal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle non-command messages by appending them to the daily journal."""
+    from datetime import datetime
+
+    config = load_config()
+    today = date.today()
+    now = datetime.now()
+
+    # Determine journal directory
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+    journal_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get message text
+    text = update.message.text.strip()
+    if not text:
+        return
+
+    # Format entry with timestamp
+    timestamp = now.strftime("%H:%M")
+    entry = f"- [{timestamp}] {text}\n"
+
+    # Append to daily journal
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+
+    if journal_file.exists():
+        content = journal_file.read_text()
+        # Check if there's already a Notes section
+        if "## Notes" in content:
+            # Append to existing Notes section
+            with open(journal_file, "a") as f:
+                f.write(entry)
+        else:
+            # Add Notes section
+            with open(journal_file, "a") as f:
+                f.write(f"\n\n## Notes\n\n{entry}")
+    else:
+        # Create new file with Notes section
+        journal_file.write_text(f"## Notes\n\n{entry}")
+
+    await update.message.reply_text("Added to journal.")
+
+
 # ============== Recap Conversation ==============
 
 
