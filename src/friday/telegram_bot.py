@@ -133,6 +133,19 @@ def create_application(config=None) -> Application:
             MessageHandler(~auth_filter & filters.ALL, unauthorized_handler)
         )
 
+    # Global error handler so commands never fail silently
+    async def error_handler(update: object, context) -> None:
+        logger.error("Unhandled exception in handler", exc_info=context.error)
+        if isinstance(update, Update) and update.effective_message:
+            try:
+                await update.effective_message.reply_text(
+                    f"Something went wrong: {context.error}"
+                )
+            except Exception:
+                logger.error("Failed to send error message to user")
+
+    app.add_error_handler(error_handler)
+
     return app
 
 
