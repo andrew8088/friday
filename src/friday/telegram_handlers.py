@@ -1,8 +1,11 @@
 """Telegram command handlers."""
 
+import logging
 import subprocess
 from datetime import date
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -117,8 +120,9 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "\n".join(f"  {e.format_time()} {e.title}" for e in events[:5])
             or "  No events"
         )
-    except Exception:
-        calendar_text = "  (Calendar unavailable)"
+    except Exception as e:
+        logger.error(f"Failed to fetch calendar for status: {e}")
+        calendar_text = f"  (Calendar unavailable: {e})"
 
     # Get tasks
     try:
