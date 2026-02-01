@@ -4,7 +4,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from telegram import Update, Bot
+from telegram import BotCommand, Update, Bot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -273,9 +273,21 @@ def run_bot():
     scheduler = setup_scheduler(app, config)
 
     async def post_init(application: Application) -> None:
-        """Start scheduler after event loop is running."""
+        """Start scheduler and register commands after event loop is running."""
         scheduler.start()
         logger.info("Scheduler started")
+
+        await application.bot.set_my_commands([
+            BotCommand("morning", "Get your morning briefing"),
+            BotCommand("week", "Weekly planning overview"),
+            BotCommand("evening", "Record your daily recap"),
+            BotCommand("tasks", "List priority tasks"),
+            BotCommand("calendar", "Today's events"),
+            BotCommand("journal", "View today's journal"),
+            BotCommand("status", "Quick status check"),
+            BotCommand("version", "Check bot version"),
+            BotCommand("help", "Show all commands"),
+        ])
 
     app.post_init = post_init
 
