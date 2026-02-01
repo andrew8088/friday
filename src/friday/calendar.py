@@ -1,4 +1,4 @@
-"""Calendar fetching via gcalcli.
+"""Calendar fetching via Google Calendar API.
 
 This module is preserved for backwards compatibility.
 New code should import from friday.core.calendar and friday.adapters.
@@ -7,16 +7,8 @@ New code should import from friday.core.calendar and friday.adapters.
 from friday.core.calendar import Event, TimeSlot, find_free_slots
 
 from friday.config import Config, load_config
-from friday.adapters.gcalcli import GcalcliAdapter
+from friday.adapters.google_calendar import GoogleCalendarAdapter
 from friday.adapters.composite_calendar import CompositeCalendarAdapter
-
-
-def fetch_gcalcli_events(target_date=None) -> list[Event]:
-    """Fetch events from gcalcli (Google Calendar)."""
-    from datetime import date
-    target_date = target_date or date.today()
-    adapter = GcalcliAdapter()
-    return adapter.fetch_day(target_date)
 
 
 def fetch_all_events(config: Config | None = None, days: int = 1) -> list[Event]:
@@ -40,7 +32,6 @@ __all__ = [
     "Event",
     "TimeSlot",
     "find_free_slots",
-    "fetch_gcalcli_events",
     "fetch_all_events",
     "fetch_today",
     "fetch_week",

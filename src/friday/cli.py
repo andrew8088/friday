@@ -289,6 +289,76 @@ def triage():
         sys.exit(1)
 
 
+@main.command("cal-auth")
+@click.option("--account", default=None, help="Label of account to authenticate (default: all)")
+def cal_auth(account: str | None):
+    """Authenticate with Google Calendar."""
+    config = load_config()
+
+    if not config.gcalcli_accounts:
+        click.echo("No calendar accounts configured in friday.conf", err=True)
+        sys.exit(1)
+
+    if not config.google_client_secret_file:
+        click.echo("GOOGLE_CLIENT_SECRET_FILE not set in friday.conf", err=True)
+        sys.exit(1)
+
+    from friday.adapters.google_calendar import GoogleCalendarAdapter
+
+    for acct in config.gcalcli_accounts:
+        if account and acct.label != account:
+            continue
+
+        click.echo(f"\nAuthenticating: {acct.label or acct.config_folder}")
+        adapter = GoogleCalendarAdapter(
+            config_folder=acct.config_folder,
+            label=acct.label,
+            client_secret_file=config.google_client_secret_file,
+        )
+        if adapter.authenticate():
+            click.echo(f"  ✓ Token saved to {adapter._token_path}")
+        else:
+            click.echo(f"  ✗ Authentication failed", err=True)
+
+
+@main.command("cal-debug")
+def cal_debug():
+    """Debug calendar connectivity per account."""
+    config = load_config()
+    composite = cal.CompositeCalendarAdapter(config)
+
+    for adapter in composite._adapters:
+        folder_display = adapter.config_folder or "(default)"
+        click.echo(f"\nAccount: {adapter.label} ({folder_display})")
+
+        # List calendars
+        try:
+            calendars = adapter.list_calendars()
+            if calendars:
+                click.echo("  ✓ Authenticated")
+                click.echo("  Calendars:")
+                for access, name in calendars:
+                    click.echo(f"    {access:16} {name}")
+            else:
+                click.echo("  ✗ No calendars (not authenticated? run 'friday cal-auth')")
+        except Exception as e:
+            click.echo(f"  ✗ Failed: {e}")
+            continue
+
+        # Show filter
+        if adapter.calendars:
+            click.echo(f"  Filter: {', '.join(adapter.calendars)}")
+        else:
+            click.echo("  Filter: (all calendars)")
+
+        # Test fetch today's events
+        try:
+            events = adapter.fetch_events(days=1)
+            click.echo(f"  Today's events: {len(events)}")
+        except Exception as e:
+            click.echo(f"  Today's events: error ({e})")
+
+
 @main.command()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def bot(debug: bool):

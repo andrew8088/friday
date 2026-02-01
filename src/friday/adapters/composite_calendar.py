@@ -5,37 +5,35 @@ from datetime import date
 from friday.config import Config
 from friday.core.calendar import Event, sort_events_by_start, filter_events_by_date
 
-from .gcalcli import GcalcliAdapter
+from .google_calendar import GoogleCalendarAdapter
 
 
 class CompositeCalendarAdapter:
     """
-    Composite calendar adapter using gcalcli.
+    Composite calendar adapter using Google Calendar API.
 
     Implements CalendarRepository protocol.
     """
 
     def __init__(self, config: Config):
         self.config = config
-        self._gcalcli_adapters: list[GcalcliAdapter] = []
-        if config.gcalcli_accounts:
-            for account in config.gcalcli_accounts:
-                self._gcalcli_adapters.append(
-                    GcalcliAdapter(
-                        config_folder=account.config_folder,
-                        label=account.label,
-                        calendars=account.calendars or None,
-                    )
+        self._adapters: list[GoogleCalendarAdapter] = []
+        for account in config.gcalcli_accounts:
+            self._adapters.append(
+                GoogleCalendarAdapter(
+                    config_folder=account.config_folder,
+                    label=account.label,
+                    calendars=account.calendars or None,
+                    client_secret_file=config.google_client_secret_file,
+                    timezone=config.timezone,
                 )
-        else:
-            # Default: single gcalcli account
-            self._gcalcli_adapters.append(GcalcliAdapter())
+            )
 
     def fetch_events(self, days: int = 1) -> list[Event]:
         """Fetch events from all configured sources for the next N days."""
         events = []
 
-        for adapter in self._gcalcli_adapters:
+        for adapter in self._adapters:
             events.extend(adapter.fetch_events(days))
 
         # Filter to date range and sort
@@ -49,7 +47,7 @@ class CompositeCalendarAdapter:
         """Fetch events for a specific date."""
         events = []
 
-        for adapter in self._gcalcli_adapters:
+        for adapter in self._adapters:
             events.extend(adapter.fetch_day(target_date))
 
         return sort_events_by_start(events)

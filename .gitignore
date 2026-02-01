@@ -5,7 +5,7 @@ logs
 # Configuration with secrets
 config/friday.conf
 config/.tokens
-config/.tokens.json
+config/*.json
 
 # Python
 __pycache__/

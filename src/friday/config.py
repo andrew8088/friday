@@ -42,6 +42,7 @@ class Config:
     telegram_allowed_users: list[int] = field(default_factory=list)
     telegram_briefing_time: str = "07:30"
     telegram_recap_reminder_time: str = "21:00"
+    google_client_secret_file: str = ""
 
 
 @dataclass
@@ -176,5 +177,7 @@ def load_config() -> Config:
                 config.telegram_briefing_time = value
             case "telegram_recap_reminder_time":
                 config.telegram_recap_reminder_time = value
+            case "google_client_secret_file":
+                config.google_client_secret_file = value
 
     return config
