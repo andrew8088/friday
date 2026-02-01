@@ -1,7 +1,7 @@
 """Pure calendar domain logic - no I/O dependencies."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 
 @dataclass
@@ -81,15 +81,20 @@ def find_free_slots(
     else:
         d = date.today()
 
-    # Work hours boundaries
-    day_start = datetime.combine(d, time(work_start, 0))
-    day_end = datetime.combine(d, time(work_end, 0))
-
     # Filter to timed events only (not all-day) and sort by start
     timed_events = sorted(
         [e for e in events if not e.all_day and e.end is not None],
         key=lambda e: e.start,
     )
+
+    # Work hours boundaries — use event timezone if available, otherwise naive
+    tz = None
+    if timed_events:
+        tz = timed_events[0].start.tzinfo
+    elif events:
+        tz = events[0].start.tzinfo
+    day_start = datetime.combine(d, time(work_start, 0), tzinfo=tz)
+    day_end = datetime.combine(d, time(work_end, 0), tzinfo=tz)
 
     free_slots = []
     current_time = day_start
