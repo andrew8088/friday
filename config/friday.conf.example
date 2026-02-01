@@ -7,13 +7,9 @@ TICKTICK_CLIENT_ID="your_client_id_here"
 TICKTICK_CLIENT_SECRET="your_client_secret_here"
 TICKTICK_ACCESS_TOKEN=""
 
-# Calendar sources
-# icalPal is used by default for iCloud/macOS calendars
-# Set to true to also include Google Calendar via gcalcli (single account)
-USE_GCALCLI="false"
-
-# Multiple Google accounts (overrides USE_GCALCLI if set)
-# Each account needs its own gcalcli config folder with OAuth credentials.
+# Google Calendar (via gcalcli)
+# Leave GCALCLI_ACCOUNTS empty to use default gcalcli config.
+# For multiple accounts, each needs its own gcalcli config folder with OAuth credentials.
 # To set up a new account:
 #   1. Create a folder: mkdir -p ~/.gcalcli/work
 #   2. Authenticate: gcalcli --config-folder ~/.gcalcli/work list
@@ -24,11 +20,6 @@ USE_GCALCLI="false"
 # JSON format (with calendar filtering):
 #   GCALCLI_ACCOUNTS='[{"config_folder": "~/.gcalcli/work", "label": "Work", "calendars": ["Work", "Meetings"]}]'
 GCALCLI_ACCOUNTS=""
-
-# Calendar filters (comma-separated)
-# Leave empty to include all calendars
-ICALPAL_INCLUDE_CALENDARS="Home,Work"
-ICALPAL_EXCLUDE_CALENDARS=""
 
 # Time zone
 TIMEZONE="America/Toronto"

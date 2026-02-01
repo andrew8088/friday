@@ -29,10 +29,7 @@ class Config:
 
     ticktick_client_id: str = ""
     ticktick_client_secret: str = ""
-    use_gcalcli: bool = False
     gcalcli_accounts: list[GcalAccount] = field(default_factory=list)
-    icalpal_include_calendars: list[str] = field(default_factory=list)
-    icalpal_exclude_calendars: list[str] = field(default_factory=list)
     timezone: str = "America/Toronto"
     work_hours: str = "09:00-17:00"
     work_task_lists: list[str] = field(default_factory=list)
@@ -127,8 +124,6 @@ def load_config() -> Config:
                 config.ticktick_client_id = value
             case "ticktick_client_secret":
                 config.ticktick_client_secret = value
-            case "use_gcalcli":
-                config.use_gcalcli = value.lower() == "true"
             case "gcalcli_accounts":
                 # JSON format: [{"config_folder": "...", "label": "...", "calendars": [...]}]
                 # Simple format (backwards compat): "path1:label1,path2:label2"
@@ -159,10 +154,6 @@ def load_config() -> Config:
                         else:
                             accounts.append(GcalAccount(entry))
                 config.gcalcli_accounts = accounts
-            case "icalpal_include_calendars":
-                config.icalpal_include_calendars = [c.strip() for c in value.split(",") if c.strip()]
-            case "icalpal_exclude_calendars":
-                config.icalpal_exclude_calendars = [c.strip() for c in value.split(",") if c.strip()]
             case "timezone":
                 config.timezone = value
             case "work_hours":

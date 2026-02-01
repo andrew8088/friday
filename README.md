@@ -29,10 +29,7 @@ friday calendar
 ## Dependencies
 
 ```bash
-# icalPal for macOS Calendar (recommended)
-brew tap ajrosen/tap && brew install icalPal
-
-# Optional: gcalcli for Google Calendar
+# gcalcli for Google Calendar
 pip install gcalcli
 ```
 
@@ -66,7 +63,7 @@ When running Claude Code in the `~/friday` directory, these slash commands are a
 ├── src/friday/            # Python package
 │   ├── cli.py             # Main CLI (click)
 │   ├── ticktick.py        # TickTick API + OAuth
-│   ├── calendar.py        # icalPal/gcalcli integration
+│   ├── calendar.py        # gcalcli integration
 │   └── config.py          # Configuration management
 ├── templates/             # Prompt templates
 ├── config/friday.conf     # Configuration
@@ -84,8 +81,6 @@ TICKTICK_CLIENT_ID="..."
 TICKTICK_CLIENT_SECRET="..."
 
 # Calendar sources
-USE_GCALCLI="false"
-ICALPAL_INCLUDE_CALENDARS="Home,Work"
 
 # Preferences
 TIMEZONE="America/Toronto"

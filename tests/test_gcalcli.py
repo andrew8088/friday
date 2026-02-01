@@ -196,9 +196,9 @@ class TestCompositeCalendarMultiAccount:
         assert adapter._gcalcli_adapters[0].label == "Personal"
         assert adapter._gcalcli_adapters[1].label == "Work"
 
-    def test_backwards_compatible_use_gcalcli(self):
-        """use_gcalcli=True creates single default adapter."""
-        config = Config(use_gcalcli=True)
+    def test_default_single_adapter(self):
+        """Default config creates single default adapter."""
+        config = Config()
 
         adapter = CompositeCalendarAdapter(config)
 
@@ -206,10 +206,9 @@ class TestCompositeCalendarMultiAccount:
         assert adapter._gcalcli_adapters[0].config_folder is None
         assert adapter._gcalcli_adapters[0].label == "Google"
 
-    def test_gcalcli_accounts_overrides_use_gcalcli(self):
-        """gcalcli_accounts takes precedence over use_gcalcli."""
+    def test_gcalcli_accounts_overrides_default(self):
+        """gcalcli_accounts takes precedence over default adapter."""
         config = Config(
-            use_gcalcli=True,  # Should be ignored
             gcalcli_accounts=[GcalAccount("~/.gcalcli/work", "Work")],
         )
 
@@ -217,14 +216,6 @@ class TestCompositeCalendarMultiAccount:
 
         assert len(adapter._gcalcli_adapters) == 1
         assert adapter._gcalcli_adapters[0].label == "Work"
-
-    def test_no_gcalcli_when_disabled(self):
-        """No gcalcli adapters when neither option is set."""
-        config = Config(use_gcalcli=False)
-
-        adapter = CompositeCalendarAdapter(config)
-
-        assert len(adapter._gcalcli_adapters) == 0
 
     def test_passes_calendars_to_adapters(self):
         """Passes calendar filter to gcalcli adapters."""
