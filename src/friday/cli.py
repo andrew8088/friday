@@ -296,7 +296,10 @@ def bot(debug: bool):
     import logging
 
     if debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            level=logging.DEBUG,
+        )
 
     try:
         from .telegram_bot import run_bot
