@@ -77,7 +77,7 @@ def create_application(config=None) -> Application:
     # Simple commands (with auth filter)
     app.add_handler(CommandHandler("start", start_handler, filters=auth_filter))
     app.add_handler(CommandHandler("help", help_handler, filters=auth_filter))
-    app.add_handler(CommandHandler("briefing", briefing_handler, filters=auth_filter))
+    app.add_handler(CommandHandler("morning", briefing_handler, filters=auth_filter))
     app.add_handler(CommandHandler("week", week_handler, filters=auth_filter))
     app.add_handler(CommandHandler("status", status_handler, filters=auth_filter))
     app.add_handler(CommandHandler("tasks", tasks_handler, filters=auth_filter))
@@ -87,7 +87,7 @@ def create_application(config=None) -> Application:
 
     # Recap conversation handler (multi-step)
     recap_conv = ConversationHandler(
-        entry_points=[CommandHandler("recap", recap_start_handler, filters=auth_filter)],
+        entry_points=[CommandHandler("evening", recap_start_handler, filters=auth_filter)],
         states={
             RecapStates.CONFIRM_OVERWRITE: [
                 CallbackQueryHandler(recap_confirm_handler),
@@ -253,7 +253,7 @@ async def send_recap_reminder(bot: Bot, user_ids: list[int], config):
             try:
                 await bot.send_message(
                     chat_id=user_id,
-                    text="Time for your daily recap!\n\nUse /recap to reflect on today.",
+                    text="Time for your daily recap!\n\nUse /evening to reflect on today.",
                 )
             except Exception as e:
                 logger.error(f"Failed to send recap reminder to user {user_id}: {e}")
