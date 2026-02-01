@@ -105,6 +105,22 @@ class TickTickAdapter:
 
         return tasks
 
+    def get_all_tasks(self) -> list[Task]:
+        """Get all tasks (alias for fetch_all)."""
+        return self.fetch_all()
+
+    def get_priority_tasks(self) -> list[Task]:
+        """Get actionable tasks sorted by priority."""
+        from friday.core.tasks import filter_actionable, sort_by_priority
+
+        all_tasks = self.fetch_all()
+        actionable = filter_actionable(all_tasks)
+        return sort_by_priority(actionable)
+
+    def get_inbox_tasks(self) -> list[Task]:
+        """Get inbox tasks (alias for fetch_inbox)."""
+        return self.fetch_inbox()
+
     def fetch_inbox(self) -> list[Task]:
         """Fetch tasks from the Inbox project."""
         projects = self._get_projects()
