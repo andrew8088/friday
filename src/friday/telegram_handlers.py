@@ -28,6 +28,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/briefing - Get your morning briefing\n"
+        "/week - Weekly planning overview\n"
         "/journal - View today's journal\n"
         "/recap - Record your daily recap\n"
         "/status - Quick status check\n"
@@ -43,6 +44,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/briefing - Generate morning briefing with tasks and calendar\n"
+        "/week - Weekly planning overview\n"
         "/journal - View today's journal entry\n"
         "/recap - Interactive daily reflection\n"
         "/status - Today's calendar and top tasks\n"
@@ -250,6 +252,40 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except subprocess.TimeoutExpired:
         await update.message.reply_text("Briefing generation timed out.")
+    except FileNotFoundError:
+        await update.message.reply_text("Claude CLI not found on server.")
+
+
+async def week_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /week command."""
+    await update.message.reply_text("Generating your weekly plan...")
+
+    from .cli import compile_week
+
+    prompt = compile_week()
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "-"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            plan = result.stdout.strip()
+            if len(plan) > 4000:
+                for i in range(0, len(plan), 4000):
+                    await update.message.reply_text(plan[i : i + 4000])
+            else:
+                await update.message.reply_text(plan)
+        else:
+            await update.message.reply_text(
+                "Failed to generate weekly plan. Check logs."
+            )
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("Weekly plan generation timed out.")
     except FileNotFoundError:
         await update.message.reply_text("Claude CLI not found on server.")
 

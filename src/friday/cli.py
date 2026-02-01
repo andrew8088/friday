@@ -278,6 +278,58 @@ def review():
 
 
 @main.command()
+def week():
+    """Generate weekly plan."""
+    config = load_config()
+    today = date.today().isoformat()
+
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    output_file = journal_dir / f"{today}.md"
+
+    prompt = compile_week()
+
+    try:
+        proc = subprocess.Popen(
+            ["claude", "-p", "-"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+
+        output_lines = []
+        for line in proc.stdout:
+            click.echo(line, nl=False)
+            output_lines.append(line)
+
+        proc.wait()
+        output = "".join(output_lines)
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()
+            click.echo(f"Error running claude: {stderr}", err=True)
+            sys.exit(1)
+
+        if output_file.exists():
+            with open(output_file, "a") as f:
+                f.write(f"\n\n---\n\n## Weekly Plan\n\n{output}")
+        else:
+            output_file.write_text(f"## Weekly Plan\n\n{output}")
+
+    except FileNotFoundError:
+        click.echo("Error: 'claude' command not found", err=True)
+        sys.exit(1)
+
+
+@main.command()
 def triage():
     """Process inbox items with Claude."""
     try:
@@ -711,6 +763,135 @@ def compile_review() -> str:
 2. Identify incomplete items and recommend action
 3. Flag calendar conflicts for next week
 4. Suggest 3 focus areas for the coming week
+"""
+
+
+def compile_week() -> str:
+    """Compile the weekly planning prompt."""
+    from datetime import datetime, timedelta
+
+    config = load_config()
+    today = date.today()
+
+    # Days remaining through Saturday (weekday 5 = Saturday)
+    days_until_saturday = (5 - today.weekday()) % 7
+    if days_until_saturday == 0 and today.weekday() == 5:
+        days_until_saturday = 0  # It's Saturday, show today only
+    days_remaining = days_until_saturday + 1  # inclusive
+
+    # Parse work hours
+    work_start_str, work_end_str = config.work_hours.split("-")
+    work_start = int(work_start_str.split(":")[0])
+    work_end = int(work_end_str.split(":")[0])
+
+    # Calendar events with day headers
+    events = cal.fetch_all_events(config, days=days_remaining)
+    calendar_lines = []
+    current_date = None
+    day_events = {}  # date -> list of events for free slot calc
+    for e in events:
+        event_date = e.start.date()
+        if event_date not in day_events:
+            day_events[event_date] = []
+        day_events[event_date].append(e)
+        if event_date != current_date:
+            if current_date is not None:
+                calendar_lines.append("")
+            calendar_lines.append(f"### {event_date.strftime('%A, %B %d')}")
+            current_date = event_date
+        time_str = e.format_time()
+        loc = f" @ {e.location}" if e.location else ""
+        calendar_lines.append(f"- {time_str} {e.title}{loc}")
+    calendar_md = "\n".join(calendar_lines) or "No events this week."
+
+    # Free slots per workday
+    free_slots_lines = []
+    for i in range(days_remaining):
+        d = today + timedelta(days=i)
+        if d.weekday() >= 5:  # Skip weekends
+            continue
+        day_evts = day_events.get(d, [])
+        slots = cal.find_free_slots(day_evts, work_start=work_start, work_end=work_end, min_duration=30)
+        if slots:
+            free_slots_lines.append(f"**{d.strftime('%A, %B %d')}**: {', '.join(s.format() for s in slots)}")
+        else:
+            free_slots_lines.append(f"**{d.strftime('%A, %B %d')}**: No free slots")
+    free_slots_md = "\n".join(free_slots_lines) or "No workdays remaining this week."
+
+    # Tasks: due before end of Saturday OR priority >= 3
+    end_of_saturday = today + timedelta(days=days_until_saturday)
+    tasks_md = ""
+    try:
+        client = TickTickClient()
+        all_tasks = client.get_all_tasks()
+
+        week_tasks = [
+            t for t in all_tasks
+            if (t.due_date and t.due_date <= end_of_saturday) or t.priority >= 3
+        ]
+
+        def format_task(t):
+            days_until = (t.due_date - today).days if t.due_date else None
+            urgency = ""
+            if days_until is not None:
+                if days_until < 0:
+                    urgency = f"OVERDUE by {-days_until}d"
+                elif days_until == 0:
+                    urgency = "due TODAY"
+                else:
+                    urgency = f"due in {days_until}d"
+            quadrant = t.quadrant_label()
+            return f"- [{quadrant}] {t.title} ({urgency}, project: {t.project_name})"
+
+        work_tasks = [t for t in week_tasks if t.project_name in config.work_task_lists]
+        personal_tasks = [t for t in week_tasks if t.project_name in config.personal_task_lists]
+        other_tasks = [t for t in week_tasks if t.project_name not in config.work_task_lists and t.project_name not in config.personal_task_lists]
+
+        work_md = "\n".join(format_task(t) for t in work_tasks) or "None"
+        personal_md = "\n".join(format_task(t) for t in personal_tasks) or "None"
+        other_md = "\n".join(format_task(t) for t in other_tasks) or "None"
+
+        tasks_md = f"""### Work Tasks
+{work_md}
+
+### Personal Tasks
+{personal_md}
+
+### Other
+{other_md}"""
+    except AuthenticationError:
+        tasks_md = "(TickTick not authenticated - run 'friday auth')"
+
+    template = FRIDAY_HOME / "templates" / "weekly-planning.md"
+    if template.exists():
+        prompt = template.read_text()
+        prompt = prompt.replace("{{DATE}}", today.isoformat())
+        prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
+        prompt = prompt.replace("{{CALENDAR}}", calendar_md)
+        prompt = prompt.replace("{{FREE_SLOTS}}", free_slots_md)
+        prompt = prompt.replace("{{TASKS}}", tasks_md)
+        return prompt
+
+    # Fallback inline template
+    return f"""You are Friday, a personal assistant. Generate a weekly plan.
+
+## Week of {today.strftime("%A, %B %d, %Y")} through Saturday
+
+## Calendar
+{calendar_md}
+
+## Free Time Slots (Workdays)
+{free_slots_md}
+
+## Tasks (due this week or high priority)
+{tasks_md}
+
+## Instructions
+1. Suggest 3 focus areas for the rest of the week
+2. Flag any scheduling risks or conflicts
+3. Recommend specific time blocks for high-priority tasks
+4. Note any overloaded days and suggest redistribution
+5. Be specific with times and days, not vague
 """
 
 

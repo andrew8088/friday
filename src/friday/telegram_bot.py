@@ -21,6 +21,7 @@ from .telegram_handlers import (
     start_handler,
     help_handler,
     briefing_handler,
+    week_handler,
     status_handler,
     tasks_handler,
     calendar_handler,
@@ -77,6 +78,7 @@ def create_application(config=None) -> Application:
     app.add_handler(CommandHandler("start", start_handler, filters=auth_filter))
     app.add_handler(CommandHandler("help", help_handler, filters=auth_filter))
     app.add_handler(CommandHandler("briefing", briefing_handler, filters=auth_filter))
+    app.add_handler(CommandHandler("week", week_handler, filters=auth_filter))
     app.add_handler(CommandHandler("status", status_handler, filters=auth_filter))
     app.add_handler(CommandHandler("tasks", tasks_handler, filters=auth_filter))
     app.add_handler(CommandHandler("calendar", calendar_handler, filters=auth_filter))
