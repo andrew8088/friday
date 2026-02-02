@@ -15,7 +15,6 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-
 from .config import load_config, FRIDAY_HOME
 from .telegram_handlers import (
     start_handler,
@@ -38,6 +37,8 @@ from .telegram_handlers import (
     recap_cancel_handler,
 )
 from .telegram_states import RecapStates
+
+from .telegram_format import send_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -250,17 +251,7 @@ async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
             briefing = result.stdout.strip()
             for user_id in user_ids:
                 try:
-                    # Split if too long
-                    if len(briefing) > 4000:
-                        await bot.send_message(chat_id=user_id, text="*Morning Briefing*", parse_mode="Markdown")
-                        for i in range(0, len(briefing), 4000):
-                            await bot.send_message(chat_id=user_id, text=briefing[i : i + 4000])
-                    else:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text=f"*Morning Briefing*\n\n{briefing}",
-                            parse_mode="Markdown",
-                        )
+                    await send_markdown(bot, briefing, chat_id=user_id)
                 except Exception as e:
                     logger.error(f"Failed to send briefing to user {user_id}: {e}")
 
@@ -313,16 +304,7 @@ async def send_scheduled_weekly_plan(bot: Bot, user_ids: list[int]):
             plan = result.stdout.strip()
             for user_id in user_ids:
                 try:
-                    if len(plan) > 4000:
-                        await bot.send_message(chat_id=user_id, text="*Weekly Plan*", parse_mode="Markdown")
-                        for i in range(0, len(plan), 4000):
-                            await bot.send_message(chat_id=user_id, text=plan[i : i + 4000])
-                    else:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text=f"*Weekly Plan*\n\n{plan}",
-                            parse_mode="Markdown",
-                        )
+                    await send_markdown(bot, plan, chat_id=user_id)
                 except Exception as e:
                     logger.error(f"Failed to send weekly plan to user {user_id}: {e}")
 
@@ -372,16 +354,7 @@ async def send_scheduled_weekly_review(bot: Bot, user_ids: list[int]):
             review = result.stdout.strip()
             for user_id in user_ids:
                 try:
-                    if len(review) > 4000:
-                        await bot.send_message(chat_id=user_id, text="*Weekly Review*", parse_mode="Markdown")
-                        for i in range(0, len(review), 4000):
-                            await bot.send_message(chat_id=user_id, text=review[i : i + 4000])
-                    else:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text=f"*Weekly Review*\n\n{review}",
-                            parse_mode="Markdown",
-                        )
+                    await send_markdown(bot, review, chat_id=user_id)
                 except Exception as e:
                     logger.error(f"Failed to send weekly review to user {user_id}: {e}")
 

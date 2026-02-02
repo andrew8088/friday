@@ -11,6 +11,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from .config import load_config, FRIDAY_HOME
+from .telegram_format import send_markdown
 from .recap import Recap, RecapMode, determine_recap_mode
 from .telegram_states import RecapStates
 from . import calendar as cal
@@ -244,18 +245,9 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if result.returncode == 0:
             briefing = result.stdout.strip()
-            # Telegram has 4096 char limit, split if needed
-            if len(briefing) > 4000:
-                for i in range(0, len(briefing), 4000):
-                    await update.message.reply_text(briefing[i : i + 4000])
-            else:
-                await update.message.reply_text(briefing)
+            await send_markdown(update.message, briefing)
 
             # Append to daily journal
-            from datetime import date
-            from pathlib import Path
-            from .config import load_config, FRIDAY_HOME
-
             config = load_config()
             if config.daily_journal_dir:
                 journal_dir = Path(config.daily_journal_dir).expanduser()
@@ -299,17 +291,9 @@ async def week_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if result.returncode == 0:
             plan = result.stdout.strip()
-            if len(plan) > 4000:
-                for i in range(0, len(plan), 4000):
-                    await update.message.reply_text(plan[i : i + 4000])
-            else:
-                await update.message.reply_text(plan)
+            await send_markdown(update.message, plan)
 
             # Append to daily journal
-            from datetime import date
-            from pathlib import Path
-            from .config import load_config, FRIDAY_HOME
-
             config = load_config()
             if config.daily_journal_dir:
                 journal_dir = Path(config.daily_journal_dir).expanduser()
@@ -353,11 +337,7 @@ async def review_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if result.returncode == 0:
             review = result.stdout.strip()
-            if len(review) > 4000:
-                for i in range(0, len(review), 4000):
-                    await update.message.reply_text(review[i : i + 4000])
-            else:
-                await update.message.reply_text(review)
+            await send_markdown(update.message, review)
 
             # Append to daily journal
             config = load_config()
