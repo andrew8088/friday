@@ -59,7 +59,10 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_ALLOWED_USERS=""
 
 # When to send the morning briefing automatically (HH:MM in your timezone)
-TELEGRAM_BRIEFING_TIME="07:30"
+TELEGRAM_BRIEFING_TIME="06:50"
+
+# When to send the weekly plan automatically (HH:MM in your timezone, on WEEKLY_REVIEW_DAY)
+TELEGRAM_WEEKLY_TIME="16:00"
 
 # When to send a recap reminder if no recap exists (HH:MM in your timezone)
 TELEGRAM_RECAP_REMINDER_TIME="21:00"

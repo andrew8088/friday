@@ -186,6 +186,26 @@ def setup_scheduler(app: Application, config=None) -> AsyncIOScheduler:
         except ValueError:
             logger.warning(f"Invalid recap reminder time format: {config.telegram_recap_reminder_time}")
 
+    # Parse weekly plan time
+    if config.telegram_weekly_time and config.telegram_allowed_users:
+        try:
+            hour, minute = map(int, config.telegram_weekly_time.split(":"))
+            # Map day name to cron day_of_week
+            day_map = {
+                "monday": "mon", "tuesday": "tue", "wednesday": "wed",
+                "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
+            }
+            dow = day_map.get(config.weekly_review_day.lower(), "sun")
+            scheduler.add_job(
+                send_scheduled_weekly_plan,
+                CronTrigger(day_of_week=dow, hour=hour, minute=minute),
+                args=[app.bot, config.telegram_allowed_users],
+                id="weekly_plan",
+            )
+            logger.info(f"Scheduled weekly plan on {config.weekly_review_day} at {hour:02d}:{minute:02d}")
+        except ValueError:
+            logger.warning(f"Invalid weekly time format: {config.telegram_weekly_time}")
+
     return scheduler
 
 
@@ -250,6 +270,65 @@ async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
         logger.error("Claude CLI not found")
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
+
+
+async def send_scheduled_weekly_plan(bot: Bot, user_ids: list[int]):
+    """Send weekly plan to all authorized users."""
+    import subprocess
+    from .adapters.claude_cli import find_claude_binary
+    from .cli import compile_week
+
+    logger.info("Sending scheduled weekly plan")
+
+    prompt = compile_week()
+
+    try:
+        result = subprocess.run(
+            [find_claude_binary(), "-p", "-"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            plan = result.stdout.strip()
+            for user_id in user_ids:
+                try:
+                    if len(plan) > 4000:
+                        await bot.send_message(chat_id=user_id, text="*Weekly Plan*", parse_mode="Markdown")
+                        for i in range(0, len(plan), 4000):
+                            await bot.send_message(chat_id=user_id, text=plan[i : i + 4000])
+                    else:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"*Weekly Plan*\n\n{plan}",
+                            parse_mode="Markdown",
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to send weekly plan to user {user_id}: {e}")
+
+            # Append to daily journal
+            config = load_config()
+            if config.daily_journal_dir:
+                journal_dir = Path(config.daily_journal_dir).expanduser()
+            else:
+                journal_dir = FRIDAY_HOME / "journal" / "daily"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            output_file = journal_dir / f"{date.today().isoformat()}.md"
+            if output_file.exists():
+                with open(output_file, "a") as f:
+                    f.write(f"\n\n---\n\n## Weekly Plan\n\n{plan}")
+            else:
+                output_file.write_text(f"## Weekly Plan\n\n{plan}")
+        else:
+            logger.error(f"Claude failed to generate weekly plan: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        logger.error("Weekly plan generation timed out")
+    except FileNotFoundError:
+        logger.error("Claude CLI not found")
+    except Exception as e:
+        logger.error(f"Error generating weekly plan: {e}")
 
 
 async def send_recap_reminder(bot: Bot, user_ids: list[int], config):
