@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 
 @dataclass
@@ -174,7 +174,7 @@ def find_conflicts(events: list[Event]) -> list[tuple[Event, Event]]:
     return conflicts
 
 
-_OOO_PATTERN = re.compile(r"^(ooo|out of office)\b", re.IGNORECASE)
+_OOO_PATTERN = re.compile(r"\b(ooo|out of office)\b", re.IGNORECASE)
 
 
 def drop_redundant_ooo(events: list[Event]) -> list[Event]:
@@ -197,7 +197,13 @@ def drop_redundant_ooo(events: list[Event]) -> list[Event]:
     for i in ooo_indices:
         e = events[i]
         if e.all_day:
-            ooo_calendars_by_date.add((e.calendar, e.start.date()))
+            start_date = e.start.date()
+            # Multi-day OOO: cover every date from start up to (but not including) end
+            end_date = e.end.date() if e.end else start_date + timedelta(days=1)
+            d = start_date
+            while d < end_date:
+                ooo_calendars_by_date.add((e.calendar, d))
+                d += timedelta(days=1)
 
     def _overlaps(a: Event, b: Event) -> bool:
         a_end = a.end or a.start
