@@ -230,153 +230,54 @@ def setup_scheduler(app: Application, config=None) -> AsyncIOScheduler:
 
 async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
     """Send morning briefing to all authorized users."""
-    import subprocess
-    from .adapters.claude_cli import find_claude_binary
-    from .cli import compile_briefing
+    from .workflows import generate_briefing
 
     logger.info("Sending scheduled morning briefing")
 
-    prompt = compile_briefing()
-
     try:
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            briefing = result.stdout.strip()
-            for user_id in user_ids:
-                try:
-                    await send_markdown(bot, briefing, chat_id=user_id)
-                except Exception as e:
-                    logger.error(f"Failed to send briefing to user {user_id}: {e}")
-
-            # Append to daily journal
-            from pathlib import Path
-            from .config import load_config, FRIDAY_HOME
-
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Morning Briefing\n\n{briefing}")
-            else:
-                output_file.write_text(f"## Morning Briefing\n\n{briefing}")
-        else:
-            logger.error(f"Claude failed to generate briefing: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        logger.error("Briefing generation timed out")
-    except FileNotFoundError:
-        logger.error("Claude CLI not found")
+        config = load_config()
+        output = generate_briefing(config)
+        for user_id in user_ids:
+            try:
+                await send_markdown(bot, output, chat_id=user_id)
+            except Exception as e:
+                logger.error(f"Failed to send briefing to user {user_id}: {e}")
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
 
 
 async def send_scheduled_weekly_plan(bot: Bot, user_ids: list[int]):
     """Send weekly plan to all authorized users."""
-    import subprocess
-    from .adapters.claude_cli import find_claude_binary
-    from .cli import compile_week
+    from .workflows import generate_weekly_plan
 
     logger.info("Sending scheduled weekly plan")
 
-    prompt = compile_week()
-
     try:
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            plan = result.stdout.strip()
-            for user_id in user_ids:
-                try:
-                    await send_markdown(bot, plan, chat_id=user_id)
-                except Exception as e:
-                    logger.error(f"Failed to send weekly plan to user {user_id}: {e}")
-
-            # Append to daily journal
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Weekly Plan\n\n{plan}")
-            else:
-                output_file.write_text(f"## Weekly Plan\n\n{plan}")
-        else:
-            logger.error(f"Claude failed to generate weekly plan: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        logger.error("Weekly plan generation timed out")
-    except FileNotFoundError:
-        logger.error("Claude CLI not found")
+        config = load_config()
+        output = generate_weekly_plan(config)
+        for user_id in user_ids:
+            try:
+                await send_markdown(bot, output, chat_id=user_id)
+            except Exception as e:
+                logger.error(f"Failed to send weekly plan to user {user_id}: {e}")
     except Exception as e:
         logger.error(f"Error generating weekly plan: {e}")
 
 
 async def send_scheduled_weekly_review(bot: Bot, user_ids: list[int]):
     """Send weekly review to all authorized users."""
-    import subprocess
-    from .adapters.claude_cli import find_claude_binary
-    from .cli import compile_review
+    from .workflows import generate_weekly_review
 
     logger.info("Sending scheduled weekly review")
 
-    prompt = compile_review()
-
     try:
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            review = result.stdout.strip()
-            for user_id in user_ids:
-                try:
-                    await send_markdown(bot, review, chat_id=user_id)
-                except Exception as e:
-                    logger.error(f"Failed to send weekly review to user {user_id}: {e}")
-
-            # Append to daily journal
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Weekly Review\n\n{review}")
-            else:
-                output_file.write_text(f"## Weekly Review\n\n{review}")
-        else:
-            logger.error(f"Claude failed to generate weekly review: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        logger.error("Weekly review generation timed out")
-    except FileNotFoundError:
-        logger.error("Claude CLI not found")
+        config = load_config()
+        output = generate_weekly_review(config)
+        for user_id in user_ids:
+            try:
+                await send_markdown(bot, output, chat_id=user_id)
+            except Exception as e:
+                logger.error(f"Failed to send weekly review to user {user_id}: {e}")
     except Exception as e:
         logger.error(f"Error generating weekly review: {e}")
 

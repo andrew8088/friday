@@ -16,6 +16,7 @@ from .recap import Recap, RecapMode, determine_recap_mode
 from .telegram_states import RecapStates
 from . import calendar as cal
 from .ticktick import TickTickClient, AuthenticationError
+from .workflows import generate_briefing, generate_weekly_plan, generate_weekly_review, get_journal
 
 
 # ============== Simple Commands ==============
@@ -226,140 +227,36 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /briefing command."""
     await update.message.reply_text("Generating your briefing...")
 
-    # Import here to avoid circular imports
-    from .cli import compile_briefing
-
-    prompt = compile_briefing()
-
-    from .adapters.claude_cli import find_claude_binary
-
+    config = load_config()
     try:
-        # Run through Claude
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            briefing = result.stdout.strip()
-            await send_markdown(update.message, briefing)
-
-            # Append to daily journal
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Morning Briefing\n\n{briefing}")
-            else:
-                output_file.write_text(f"## Morning Briefing\n\n{briefing}")
-        else:
-            await update.message.reply_text(
-                "Failed to generate briefing. Check logs."
-            )
-    except subprocess.TimeoutExpired:
-        await update.message.reply_text("Briefing generation timed out.")
-    except FileNotFoundError:
-        await update.message.reply_text("Claude CLI not found on server.")
+        output = generate_briefing(config)
+        await send_markdown(update.message, output)
+    except RuntimeError as e:
+        await update.message.reply_text(f"Failed to generate briefing: {e}")
 
 
 async def week_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /week command."""
     await update.message.reply_text("Generating your weekly plan...")
 
-    from .cli import compile_week
-
-    prompt = compile_week()
-
-    from .adapters.claude_cli import find_claude_binary
-
+    config = load_config()
     try:
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            plan = result.stdout.strip()
-            await send_markdown(update.message, plan)
-
-            # Append to daily journal
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Weekly Plan\n\n{plan}")
-            else:
-                output_file.write_text(f"## Weekly Plan\n\n{plan}")
-        else:
-            await update.message.reply_text(
-                "Failed to generate weekly plan. Check logs."
-            )
-    except subprocess.TimeoutExpired:
-        await update.message.reply_text("Weekly plan generation timed out.")
-    except FileNotFoundError:
-        await update.message.reply_text("Claude CLI not found on server.")
+        output = generate_weekly_plan(config)
+        await send_markdown(update.message, output)
+    except RuntimeError as e:
+        await update.message.reply_text(f"Failed to generate weekly plan: {e}")
 
 
 async def review_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /endweek command."""
     await update.message.reply_text("Generating your weekly review...")
 
-    from .cli import compile_review
-
-    prompt = compile_review()
-
-    from .adapters.claude_cli import find_claude_binary
-
+    config = load_config()
     try:
-        result = subprocess.run(
-            [find_claude_binary(), "-p", "-"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if result.returncode == 0:
-            review = result.stdout.strip()
-            await send_markdown(update.message, review)
-
-            # Append to daily journal
-            config = load_config()
-            if config.daily_journal_dir:
-                journal_dir = Path(config.daily_journal_dir).expanduser()
-            else:
-                journal_dir = FRIDAY_HOME / "journal" / "daily"
-            journal_dir.mkdir(parents=True, exist_ok=True)
-            output_file = journal_dir / f"{date.today().isoformat()}.md"
-            if output_file.exists():
-                with open(output_file, "a") as f:
-                    f.write(f"\n\n---\n\n## Weekly Review\n\n{review}")
-            else:
-                output_file.write_text(f"## Weekly Review\n\n{review}")
-        else:
-            await update.message.reply_text(
-                "Failed to generate weekly review. Check logs."
-            )
-    except subprocess.TimeoutExpired:
-        await update.message.reply_text("Weekly review generation timed out.")
-    except FileNotFoundError:
-        await update.message.reply_text("Claude CLI not found on server.")
+        output = generate_weekly_review(config)
+        await send_markdown(update.message, output)
+    except RuntimeError as e:
+        await update.message.reply_text(f"Failed to generate weekly review: {e}")
 
 
 # ============== Journal Logging ==============

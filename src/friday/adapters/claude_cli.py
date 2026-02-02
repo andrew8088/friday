@@ -4,7 +4,6 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -55,36 +54,6 @@ class ClaudeCLIService:
             raise RuntimeError("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"Claude CLI timed out after {self.timeout}s")
-
-    def stream(self, prompt: str) -> Iterator[str]:
-        """Stream text generation. Yields chunks as they arrive."""
-        try:
-            proc = subprocess.Popen(
-                [self._claude, "-p", "-"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=self.cwd,
-            )
-
-            # Write prompt to stdin
-            proc.stdin.write(prompt)
-            proc.stdin.close()
-
-            # Stream stdout
-            for line in proc.stdout:
-                yield line
-
-            # Check for errors
-            proc.wait()
-            if proc.returncode != 0:
-                stderr = proc.stderr.read()
-                logger.error(f"Claude CLI failed: {stderr}")
-                raise RuntimeError(f"Claude CLI failed: {stderr}")
-
-        except FileNotFoundError:
-            raise RuntimeError("Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
 
     def run_command(self, command: str) -> str:
         """
