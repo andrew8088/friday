@@ -343,6 +343,114 @@ def startweek():
         sys.exit(1)
 
 
+@main.command("startweek-fixture")
+def startweek_fixture():
+    """Capture startweek pipeline data as a JSON test fixture."""
+    from dataclasses import asdict
+    from datetime import datetime, timedelta
+
+    from .core.tasks import filter_notes
+
+    config = load_config()
+    today = date.today()
+
+    # Days remaining through Saturday
+    days_until_saturday = (5 - today.weekday()) % 7
+    if days_until_saturday == 0 and today.weekday() == 5:
+        days_until_saturday = 0
+    days_remaining = days_until_saturday + 1
+
+    work_start_str, work_end_str = config.work_hours.split("-")
+    work_start = int(work_start_str.split(":")[0])
+    work_end = int(work_end_str.split(":")[0])
+    end_of_saturday = today + timedelta(days=days_until_saturday)
+
+    def serialize_event(e):
+        return {
+            "title": e.title,
+            "start": e.start.isoformat(),
+            "end": e.end.isoformat() if e.end else None,
+            "location": e.location,
+            "calendar": e.calendar,
+            "all_day": e.all_day,
+            "source": e.source,
+        }
+
+    def serialize_task(t):
+        return {
+            "id": t.id,
+            "title": t.title,
+            "priority": t.priority,
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "project_id": t.project_id,
+            "project_name": t.project_name,
+            "kind": t.kind,
+        }
+
+    def serialize_slot(s):
+        return {"start": s.start.isoformat(), "end": s.end.isoformat()}
+
+    fixture = {"captured_at": datetime.now().isoformat(), "raw": {}, "processed": {}, "prompt": ""}
+
+    # --- Raw data ---
+    try:
+        client = TickTickClient()
+        fixture["raw"]["ticktick_projects"] = client._get_projects()
+        fixture["raw"]["ticktick_tasks"] = client.fetch_all_raw()
+        all_tasks = client.get_all_tasks()
+    except AuthenticationError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    events_raw = cal.fetch_all_events(config, days=days_remaining)
+    fixture["raw"]["calendar_events"] = [serialize_event(e) for e in events_raw]
+
+    # --- Processed data ---
+    events = cal.drop_redundant_ooo(events_raw)
+    fixture["processed"]["events_after_ooo_filter"] = [serialize_event(e) for e in events]
+
+    # Free slots per day
+    free_slots_by_day = {}
+    day_events = {}
+    for e in events:
+        d = e.start.date()
+        day_events.setdefault(d, []).append(e)
+    for i in range(days_remaining):
+        d = today + timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        slots = cal.find_free_slots(day_events.get(d, []), work_start=work_start, work_end=work_end, min_duration=30)
+        free_slots_by_day[d.isoformat()] = [serialize_slot(s) for s in slots]
+    fixture["processed"]["free_slots"] = free_slots_by_day
+
+    # Tasks
+    week_tasks = [
+        t for t in all_tasks
+        if not t.is_note
+        and ((t.due_date and t.due_date <= end_of_saturday) or t.priority >= 3)
+    ]
+    work_tasks = [t for t in week_tasks if t.project_name in config.work_task_lists]
+    personal_tasks = [t for t in week_tasks if t.project_name in config.personal_task_lists]
+    other_tasks = [t for t in week_tasks if t.project_name not in config.work_task_lists and t.project_name not in config.personal_task_lists]
+    notes = filter_notes(all_tasks, urgent_days=days_remaining)
+
+    fixture["processed"]["week_tasks"] = [serialize_task(t) for t in week_tasks]
+    fixture["processed"]["work_tasks"] = [serialize_task(t) for t in work_tasks]
+    fixture["processed"]["personal_tasks"] = [serialize_task(t) for t in personal_tasks]
+    fixture["processed"]["other_tasks"] = [serialize_task(t) for t in other_tasks]
+    fixture["processed"]["notes"] = [serialize_task(t) for t in notes]
+
+    # --- Prompt ---
+    fixture["prompt"] = compile_week()
+
+    # Save
+    fixtures_dir = Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+    output_path = fixtures_dir / f"startweek-{today.isoformat()}.json"
+    output_path.write_text(json.dumps(fixture, indent=2, default=str))
+    click.echo(f"Fixture saved to {output_path}")
+
+
 @main.command()
 def triage():
     """Process inbox items with Claude."""
