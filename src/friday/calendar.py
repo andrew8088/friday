@@ -4,7 +4,7 @@ This module is preserved for backwards compatibility.
 New code should import from friday.core.calendar and friday.adapters.
 """
 
-from friday.core.calendar import Event, TimeSlot, find_free_slots
+from friday.core.calendar import Event, TimeSlot, drop_redundant_ooo, find_free_slots
 
 from friday.config import Config, load_config
 from friday.adapters.google_calendar import GoogleCalendarAdapter
@@ -31,6 +31,7 @@ def fetch_week(config: Config | None = None) -> list[Event]:
 __all__ = [
     "Event",
     "TimeSlot",
+    "drop_redundant_ooo",
     "find_free_slots",
     "fetch_all_events",
     "fetch_today",

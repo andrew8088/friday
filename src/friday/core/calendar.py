@@ -1,5 +1,6 @@
 """Pure calendar domain logic - no I/O dependencies."""
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 
@@ -171,6 +172,37 @@ def find_conflicts(events: list[Event]) -> list[tuple[Event, Event]]:
             conflicts.append((e1, e2))
 
     return conflicts
+
+
+_OOO_PATTERN = re.compile(r"^(ooo|out of office)\b", re.IGNORECASE)
+
+
+def drop_redundant_ooo(events: list[Event]) -> list[Event]:
+    """Drop OOO events that overlap with an event from a different calendar."""
+    ooo_indices: set[int] = set()
+    for i, e in enumerate(events):
+        if _OOO_PATTERN.search(e.title):
+            ooo_indices.add(i)
+
+    if not ooo_indices:
+        return events
+
+    def _overlaps(a: Event, b: Event) -> bool:
+        a_end = a.end or a.start
+        b_end = b.end or b.start
+        return a.start < b_end and b.start < a_end
+
+    drop: set[int] = set()
+    for i in ooo_indices:
+        ooo = events[i]
+        for j, other in enumerate(events):
+            if j == i:
+                continue
+            if other.calendar != ooo.calendar and _overlaps(ooo, other):
+                drop.add(i)
+                break
+
+    return [e for i, e in enumerate(events) if i not in drop]
 
 
 def is_during_hours(

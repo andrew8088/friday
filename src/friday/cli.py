@@ -631,6 +631,7 @@ def compile_briefing() -> str:
 
     # Calendar events
     events = cal.fetch_today(config)
+    events = cal.drop_redundant_ooo(events)
     calendar_md = "\n".join(
         f"- {e.format_time()} - {e.end.strftime('%H:%M') if e.end and not e.all_day else ''} {e.title}".strip()
         + (f" @ {e.location}" if e.location else "")
@@ -787,6 +788,7 @@ def compile_week() -> str:
 
     # Calendar events with day headers
     events = cal.fetch_all_events(config, days=days_remaining)
+    events = cal.drop_redundant_ooo(events)
     calendar_lines = []
     current_date = None
     day_events = {}  # date -> list of events for free slot calc
