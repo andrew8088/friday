@@ -177,6 +177,15 @@ def find_conflicts(events: list[Event]) -> list[tuple[Event, Event]]:
 _OOO_PATTERN = re.compile(r"\b(ooo|out of office)\b", re.IGNORECASE)
 
 
+def _is_effectively_all_day(e: Event) -> bool:
+    """Check if an event spans full days (all_day flag or midnight-to-midnight)."""
+    if e.all_day:
+        return True
+    if e.end and e.start.time() == time(0, 0) and e.end.time() == time(0, 0) and e.end.date() > e.start.date():
+        return True
+    return False
+
+
 def drop_redundant_ooo(events: list[Event]) -> list[Event]:
     """Apply OOO filtering rules.
 
@@ -196,7 +205,7 @@ def drop_redundant_ooo(events: list[Event]) -> list[Event]:
     ooo_calendars_by_date: set[tuple[str, date]] = set()
     for i in ooo_indices:
         e = events[i]
-        if e.all_day:
+        if _is_effectively_all_day(e):
             start_date = e.start.date()
             # Multi-day OOO: cover every date from start up to (but not including) end
             end_date = e.end.date() if e.end else start_date + timedelta(days=1)

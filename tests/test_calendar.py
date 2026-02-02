@@ -11,6 +11,7 @@ from friday.core.calendar import (
     filter_events_by_date,
     sort_events_by_start,
     find_conflicts,
+    drop_redundant_ooo,
     is_during_hours,
 )
 
@@ -414,3 +415,99 @@ class TestIsDuringHours:
     def test_after_end(self, today):
         dt = datetime.combine(today, time(18, 0))
         assert is_during_hours(dt, 9, 17) is False
+
+
+class TestDropRedundantOoo:
+    """Tests for OOO filtering, including multi-day midnight-to-midnight events."""
+
+    def test_multiday_ooo_drops_same_calendar_events(self):
+        """A multi-day OOO (midnight-to-midnight, not all_day) should drop
+        same-calendar events on covered dates."""
+        ooo = Event(
+            title="Out of office",
+            start=datetime(2026, 2, 5, 0, 0),
+            end=datetime(2026, 2, 7, 0, 0),
+            location="",
+            calendar="Work",
+            all_day=False,
+            source="google_calendar",
+        )
+        standup = Event(
+            title="Backend Guild Standup",
+            start=datetime(2026, 2, 5, 13, 30),
+            end=datetime(2026, 2, 5, 13, 45),
+            location="",
+            calendar="Work",
+            all_day=False,
+            source="google_calendar",
+        )
+        # Event on a day NOT covered by the OOO
+        monday_meeting = Event(
+            title="Monday Sync",
+            start=datetime(2026, 2, 4, 10, 0),
+            end=datetime(2026, 2, 4, 10, 30),
+            location="",
+            calendar="Work",
+            all_day=False,
+            source="google_calendar",
+        )
+
+        result = drop_redundant_ooo([ooo, standup, monday_meeting])
+        titles = [e.title for e in result]
+
+        assert "Backend Guild Standup" not in titles
+        assert "Monday Sync" in titles
+        assert "Out of office" in titles
+
+    def test_multiday_ooo_keeps_different_calendar_events(self):
+        """Events from a different calendar should not be dropped by OOO."""
+        ooo = Event(
+            title="Out of office",
+            start=datetime(2026, 2, 5, 0, 0),
+            end=datetime(2026, 2, 7, 0, 0),
+            location="",
+            calendar="Work",
+            all_day=False,
+            source="google_calendar",
+        )
+        personal = Event(
+            title="Dentist",
+            start=datetime(2026, 2, 5, 14, 0),
+            end=datetime(2026, 2, 5, 15, 0),
+            location="",
+            calendar="Personal",
+            all_day=False,
+            source="google_calendar",
+        )
+
+        result = drop_redundant_ooo([ooo, personal])
+        titles = [e.title for e in result]
+
+        assert "Dentist" in titles
+
+    def test_allday_ooo_still_works(self):
+        """Traditional all_day=True OOO events still filter correctly."""
+        ooo = Event(
+            title="OOO vacation",
+            start=datetime(2026, 2, 5, 0, 0),
+            end=datetime(2026, 2, 6, 0, 0),
+            location="",
+            calendar="Work",
+            all_day=True,
+            source="google_calendar",
+        )
+        meeting = Event(
+            title="Team Standup",
+            start=datetime(2026, 2, 5, 10, 0),
+            end=datetime(2026, 2, 5, 10, 30),
+            location="",
+            calendar="Work",
+            all_day=False,
+            source="google_calendar",
+        )
+
+        result = drop_redundant_ooo([ooo, meeting])
+        titles = [e.title for e in result]
+
+        assert "Team Standup" not in titles
+        assert "OOO vacation" in titles
