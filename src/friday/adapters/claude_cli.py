@@ -1,11 +1,24 @@
 """Claude CLI adapter - subprocess wrapper for Claude Code."""
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Iterator
 
 logger = logging.getLogger(__name__)
+
+CLAUDE_FALLBACK_PATH = Path.home() / ".local" / "bin" / "claude"
+
+
+def find_claude_binary() -> str:
+    """Find the claude binary, checking PATH then known install locations."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    if CLAUDE_FALLBACK_PATH.exists():
+        return str(CLAUDE_FALLBACK_PATH)
+    return "claude"  # let FileNotFoundError propagate
 
 
 class ClaudeCLIService:
@@ -22,12 +35,13 @@ class ClaudeCLIService:
     ):
         self.cwd = Path(cwd) if cwd else None
         self.timeout = timeout
+        self._claude = find_claude_binary()
 
     def generate(self, prompt: str) -> str:
         """Generate text from a prompt. Returns complete response."""
         try:
             proc = subprocess.run(
-                ["claude", "-p", prompt],
+                [self._claude, "-p", prompt],
                 cwd=self.cwd,
                 capture_output=True,
                 text=True,
@@ -46,7 +60,7 @@ class ClaudeCLIService:
         """Stream text generation. Yields chunks as they arrive."""
         try:
             proc = subprocess.Popen(
-                ["claude", "-p", "-"],
+                [self._claude, "-p", "-"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -80,7 +94,7 @@ class ClaudeCLIService:
         """
         try:
             proc = subprocess.run(
-                ["claude", "-p", command],
+                [self._claude, "-p", command],
                 cwd=self.cwd,
                 capture_output=True,
                 text=True,

@@ -192,6 +192,7 @@ def setup_scheduler(app: Application, config=None) -> AsyncIOScheduler:
 async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
     """Send morning briefing to all authorized users."""
     import subprocess
+    from .adapters.claude_cli import find_claude_binary
     from .cli import compile_briefing
 
     logger.info("Sending scheduled morning briefing")
@@ -200,7 +201,7 @@ async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
 
     try:
         result = subprocess.run(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             input=prompt,
             capture_output=True,
             text=True,

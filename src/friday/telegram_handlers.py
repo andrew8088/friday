@@ -228,10 +228,12 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prompt = compile_briefing()
 
+    from .adapters.claude_cli import find_claude_binary
+
     try:
         # Run through Claude
         result = subprocess.run(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             input=prompt,
             capture_output=True,
             text=True,
@@ -264,9 +266,11 @@ async def week_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prompt = compile_week()
 
+    from .adapters.claude_cli import find_claude_binary
+
     try:
         result = subprocess.run(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             input=prompt,
             capture_output=True,
             text=True,

@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from . import calendar as cal
+from .adapters.claude_cli import find_claude_binary
 from .config import DATA_DIR, FRIDAY_HOME, load_config, Tokens
 from .ticktick import AuthenticationError, TickTickClient, authorize
 
@@ -186,7 +187,7 @@ def morning():
     # Pipe to claude with streaming output
     try:
         proc = subprocess.Popen(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -242,7 +243,7 @@ def review():
 
     try:
         proc = subprocess.Popen(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -295,7 +296,7 @@ def week():
 
     try:
         proc = subprocess.Popen(
-            ["claude", "-p", "-"],
+            [find_claude_binary(), "-p", "-"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -333,7 +334,7 @@ def week():
 def triage():
     """Process inbox items with Claude."""
     try:
-        subprocess.run(["claude", "-p", "Run /triage"], cwd=FRIDAY_HOME, check=True)
+        subprocess.run([find_claude_binary(), "-p", "Run /triage"], cwd=FRIDAY_HOME, check=True)
     except subprocess.CalledProcessError:
         sys.exit(1)
     except FileNotFoundError:
@@ -538,7 +539,7 @@ def _run_deep_recap(target: date, config, journal_dir: Path):
     try:
         # Run Claude interactively with the recap context
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            [find_claude_binary(), "-p", prompt],
             cwd=FRIDAY_HOME,
         )
         if result.returncode != 0:
