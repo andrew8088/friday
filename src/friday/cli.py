@@ -237,9 +237,9 @@ def morning():
         sys.exit(1)
 
 
-@main.command()
-def review():
-    """Run weekly review."""
+@main.command("endweek")
+def endweek():
+    """End-of-week review."""
     config = load_config()
     today = date.today().isoformat()
 
@@ -291,9 +291,9 @@ def review():
         sys.exit(1)
 
 
-@main.command()
-def week():
-    """Generate weekly plan."""
+@main.command("startweek")
+def startweek():
+    """Start-of-week planning."""
     config = load_config()
     today = date.today().isoformat()
 
@@ -426,6 +426,75 @@ def cal_debug():
 
 
 @main.command()
+def status():
+    """Quick status check (calendar + top tasks + recap status)."""
+    config = load_config()
+    today = date.today()
+
+    # Calendar
+    try:
+        events = cal.fetch_today(config)
+        calendar_text = (
+            "\n".join(f"  {e.format_time()} {e.title}" for e in events[:5])
+            or "  No events"
+        )
+    except Exception as e:
+        calendar_text = f"  (Calendar unavailable: {e})"
+
+    # Tasks
+    try:
+        client = TickTickClient()
+        priority_tasks = client.get_priority_tasks()[:5]
+        tasks_text = (
+            "\n".join(f"  - {t.title}" for t in priority_tasks) or "  No priority tasks"
+        )
+    except AuthenticationError:
+        tasks_text = "  (TickTick not connected)"
+
+    # Recap status
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+    journal_file = journal_dir / f"{today.isoformat()}.md"
+    recap_exists = journal_file.exists() and "## Evening Recap" in journal_file.read_text()
+    recap_status = "Done" if recap_exists else "Pending"
+
+    click.echo(f"Status for {today.strftime('%A, %b %d')}\n")
+    click.echo(f"Calendar:\n{calendar_text}\n")
+    click.echo(f"Priority Tasks:\n{tasks_text}\n")
+    click.echo(f"Today's Recap: {recap_status}")
+
+
+@main.command()
+@click.option("--date", "-d", "target_date", default=None,
+              help="Date to view (YYYY-MM-DD), defaults to today")
+def journal(target_date: str | None):
+    """View today's journal entry."""
+    config = load_config()
+    target = date.fromisoformat(target_date) if target_date else date.today()
+
+    if config.daily_journal_dir:
+        journal_dir = Path(config.daily_journal_dir).expanduser()
+    else:
+        journal_dir = FRIDAY_HOME / "journal" / "daily"
+
+    journal_file = journal_dir / f"{target.isoformat()}.md"
+
+    if not journal_file.exists():
+        click.echo(f"No journal entry for {target.strftime('%A, %b %d')}.")
+        return
+
+    content = journal_file.read_text().strip()
+    if not content:
+        click.echo(f"Journal for {target.strftime('%A, %b %d')} is empty.")
+        return
+
+    click.echo(f"Journal for {target.strftime('%A, %b %d')}\n")
+    click.echo(content)
+
+
+@main.command()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
 def bot(debug: bool):
     """Run the Telegram bot."""
@@ -453,12 +522,12 @@ def bot(debug: bool):
         click.echo("\nBot stopped.")
 
 
-@main.command()
+@main.command("evening")
 @click.option("--date", "-d", "target_date", default=None,
               help="Date to recap (YYYY-MM-DD), defaults to today")
 @click.option("--deep", is_flag=True, help="Launch interactive deep mode with Claude")
-def recap(target_date: str | None, deep: bool):
-    """Record daily recap."""
+def evening(target_date: str | None, deep: bool):
+    """Record your daily recap."""
     config = load_config()
     target = date.fromisoformat(target_date) if target_date else date.today()
 

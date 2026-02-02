@@ -35,5 +35,6 @@ When data is provided in prompts, trust it — scripts have already filtered and
 ## Available Commands
 
 - `/briefing` — Generate morning briefing
-- `/review` — Weekly review
 - `/triage` — Process inbox items
+- `/recap` — Daily recap
+- `/review` — Weekly review
