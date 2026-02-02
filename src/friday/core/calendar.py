@@ -178,7 +178,12 @@ _OOO_PATTERN = re.compile(r"^(ooo|out of office)\b", re.IGNORECASE)
 
 
 def drop_redundant_ooo(events: list[Event]) -> list[Event]:
-    """Drop OOO events that overlap with an event from a different calendar."""
+    """Apply OOO filtering rules.
+
+    1. Drop an OOO event when a different calendar has an overlapping event.
+    2. When an all-day OOO exists, drop all other events from the same calendar
+       on that date (you're off — those meetings won't happen).
+    """
     ooo_indices: set[int] = set()
     for i, e in enumerate(events):
         if _OOO_PATTERN.search(e.title):
@@ -187,20 +192,33 @@ def drop_redundant_ooo(events: list[Event]) -> list[Event]:
     if not ooo_indices:
         return events
 
+    # Rule 2: collect (calendar, date) pairs with an all-day OOO
+    ooo_calendars_by_date: set[tuple[str, date]] = set()
+    for i in ooo_indices:
+        e = events[i]
+        if e.all_day:
+            ooo_calendars_by_date.add((e.calendar, e.start.date()))
+
     def _overlaps(a: Event, b: Event) -> bool:
         a_end = a.end or a.start
         b_end = b.end or b.start
         return a.start < b_end and b.start < a_end
 
     drop: set[int] = set()
-    for i in ooo_indices:
-        ooo = events[i]
-        for j, other in enumerate(events):
-            if j == i:
-                continue
-            if other.calendar != ooo.calendar and _overlaps(ooo, other):
+    for i, e in enumerate(events):
+        if i in ooo_indices:
+            # Rule 1: drop OOO if a different calendar overlaps
+            ooo = e
+            for j, other in enumerate(events):
+                if j == i:
+                    continue
+                if other.calendar != ooo.calendar and _overlaps(ooo, other):
+                    drop.add(i)
+                    break
+        else:
+            # Rule 2: drop same-calendar events on an all-day OOO date
+            if (e.calendar, e.start.date()) in ooo_calendars_by_date:
                 drop.add(i)
-                break
 
     return [e for i, e in enumerate(events) if i not in drop]
 
