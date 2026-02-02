@@ -225,6 +225,23 @@ async def send_scheduled_briefing(bot: Bot, user_ids: list[int]):
                         )
                 except Exception as e:
                     logger.error(f"Failed to send briefing to user {user_id}: {e}")
+
+            # Append to daily journal
+            from pathlib import Path
+            from .config import load_config, FRIDAY_HOME
+
+            config = load_config()
+            if config.daily_journal_dir:
+                journal_dir = Path(config.daily_journal_dir).expanduser()
+            else:
+                journal_dir = FRIDAY_HOME / "journal" / "daily"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            output_file = journal_dir / f"{date.today().isoformat()}.md"
+            if output_file.exists():
+                with open(output_file, "a") as f:
+                    f.write(f"\n\n---\n\n## Morning Briefing\n\n{briefing}")
+            else:
+                output_file.write_text(f"## Morning Briefing\n\n{briefing}")
         else:
             logger.error(f"Claude failed to generate briefing: {result.stderr}")
     except subprocess.TimeoutExpired:

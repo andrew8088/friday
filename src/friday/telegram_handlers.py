@@ -248,6 +248,24 @@ async def briefing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(briefing[i : i + 4000])
             else:
                 await update.message.reply_text(briefing)
+
+            # Append to daily journal
+            from datetime import date
+            from pathlib import Path
+            from .config import load_config, FRIDAY_HOME
+
+            config = load_config()
+            if config.daily_journal_dir:
+                journal_dir = Path(config.daily_journal_dir).expanduser()
+            else:
+                journal_dir = FRIDAY_HOME / "journal" / "daily"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            output_file = journal_dir / f"{date.today().isoformat()}.md"
+            if output_file.exists():
+                with open(output_file, "a") as f:
+                    f.write(f"\n\n---\n\n## Morning Briefing\n\n{briefing}")
+            else:
+                output_file.write_text(f"## Morning Briefing\n\n{briefing}")
         else:
             await update.message.reply_text(
                 "Failed to generate briefing. Check logs."
