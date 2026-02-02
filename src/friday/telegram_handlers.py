@@ -28,7 +28,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/morning - Get your morning briefing\n"
-        "/week - Weekly planning overview\n"
+        "/startweek - Start-of-week planning\n"
+        "/endweek - End-of-week review\n"
         "/journal - View today's journal\n"
         "/evening - Record your daily recap\n"
         "/status - Quick status check\n"
@@ -44,7 +45,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/tasks - List priority tasks\n"
         "/calendar - Today's events\n"
         "/morning - Generate morning briefing with tasks and calendar\n"
-        "/week - Weekly planning overview\n"
+        "/startweek - Start-of-week planning\n"
+        "/endweek - End-of-week review\n"
         "/journal - View today's journal entry\n"
         "/evening - Interactive daily reflection\n"
         "/status - Today's calendar and top tasks\n"
@@ -326,6 +328,56 @@ async def week_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except subprocess.TimeoutExpired:
         await update.message.reply_text("Weekly plan generation timed out.")
+    except FileNotFoundError:
+        await update.message.reply_text("Claude CLI not found on server.")
+
+
+async def review_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /endweek command."""
+    await update.message.reply_text("Generating your weekly review...")
+
+    from .cli import compile_review
+
+    prompt = compile_review()
+
+    from .adapters.claude_cli import find_claude_binary
+
+    try:
+        result = subprocess.run(
+            [find_claude_binary(), "-p", "-"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            review = result.stdout.strip()
+            if len(review) > 4000:
+                for i in range(0, len(review), 4000):
+                    await update.message.reply_text(review[i : i + 4000])
+            else:
+                await update.message.reply_text(review)
+
+            # Append to daily journal
+            config = load_config()
+            if config.daily_journal_dir:
+                journal_dir = Path(config.daily_journal_dir).expanduser()
+            else:
+                journal_dir = FRIDAY_HOME / "journal" / "daily"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            output_file = journal_dir / f"{date.today().isoformat()}.md"
+            if output_file.exists():
+                with open(output_file, "a") as f:
+                    f.write(f"\n\n---\n\n## Weekly Review\n\n{review}")
+            else:
+                output_file.write_text(f"## Weekly Review\n\n{review}")
+        else:
+            await update.message.reply_text(
+                "Failed to generate weekly review. Check logs."
+            )
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("Weekly review generation timed out.")
     except FileNotFoundError:
         await update.message.reply_text("Claude CLI not found on server.")
 

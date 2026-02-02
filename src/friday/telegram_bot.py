@@ -22,6 +22,7 @@ from .telegram_handlers import (
     help_handler,
     briefing_handler,
     week_handler,
+    review_handler,
     status_handler,
     tasks_handler,
     calendar_handler,
@@ -78,7 +79,8 @@ def create_application(config=None) -> Application:
     app.add_handler(CommandHandler("start", start_handler, filters=auth_filter))
     app.add_handler(CommandHandler("help", help_handler, filters=auth_filter))
     app.add_handler(CommandHandler("morning", briefing_handler, filters=auth_filter))
-    app.add_handler(CommandHandler("week", week_handler, filters=auth_filter))
+    app.add_handler(CommandHandler("startweek", week_handler, filters=auth_filter))
+    app.add_handler(CommandHandler("endweek", review_handler, filters=auth_filter))
     app.add_handler(CommandHandler("status", status_handler, filters=auth_filter))
     app.add_handler(CommandHandler("tasks", tasks_handler, filters=auth_filter))
     app.add_handler(CommandHandler("calendar", calendar_handler, filters=auth_filter))
@@ -186,25 +188,41 @@ def setup_scheduler(app: Application, config=None) -> AsyncIOScheduler:
         except ValueError:
             logger.warning(f"Invalid recap reminder time format: {config.telegram_recap_reminder_time}")
 
-    # Parse weekly plan time
-    if config.telegram_weekly_time and config.telegram_allowed_users:
+    # Map day name to cron day_of_week
+    day_map = {
+        "monday": "mon", "tuesday": "tue", "wednesday": "wed",
+        "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
+    }
+
+    # Schedule start-of-week plan
+    if config.telegram_start_week_time and config.telegram_allowed_users:
         try:
-            hour, minute = map(int, config.telegram_weekly_time.split(":"))
-            # Map day name to cron day_of_week
-            day_map = {
-                "monday": "mon", "tuesday": "tue", "wednesday": "wed",
-                "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
-            }
-            dow = day_map.get(config.weekly_review_day.lower(), "sun")
+            hour, minute = map(int, config.telegram_start_week_time.split(":"))
+            dow = day_map.get(config.telegram_start_week_day.lower(), "sun")
             scheduler.add_job(
                 send_scheduled_weekly_plan,
                 CronTrigger(day_of_week=dow, hour=hour, minute=minute),
                 args=[app.bot, config.telegram_allowed_users],
-                id="weekly_plan",
+                id="start_week_plan",
             )
-            logger.info(f"Scheduled weekly plan on {config.weekly_review_day} at {hour:02d}:{minute:02d}")
+            logger.info(f"Scheduled start-of-week plan on {config.telegram_start_week_day} at {hour:02d}:{minute:02d}")
         except ValueError:
-            logger.warning(f"Invalid weekly time format: {config.telegram_weekly_time}")
+            logger.warning(f"Invalid start week time format: {config.telegram_start_week_time}")
+
+    # Schedule end-of-week review
+    if config.telegram_end_week_time and config.telegram_allowed_users:
+        try:
+            hour, minute = map(int, config.telegram_end_week_time.split(":"))
+            dow = day_map.get(config.telegram_end_week_day.lower(), "fri")
+            scheduler.add_job(
+                send_scheduled_weekly_review,
+                CronTrigger(day_of_week=dow, hour=hour, minute=minute),
+                args=[app.bot, config.telegram_allowed_users],
+                id="end_week_review",
+            )
+            logger.info(f"Scheduled end-of-week review on {config.telegram_end_week_day} at {hour:02d}:{minute:02d}")
+        except ValueError:
+            logger.warning(f"Invalid end week time format: {config.telegram_end_week_time}")
 
     return scheduler
 
@@ -331,6 +349,65 @@ async def send_scheduled_weekly_plan(bot: Bot, user_ids: list[int]):
         logger.error(f"Error generating weekly plan: {e}")
 
 
+async def send_scheduled_weekly_review(bot: Bot, user_ids: list[int]):
+    """Send weekly review to all authorized users."""
+    import subprocess
+    from .adapters.claude_cli import find_claude_binary
+    from .cli import compile_review
+
+    logger.info("Sending scheduled weekly review")
+
+    prompt = compile_review()
+
+    try:
+        result = subprocess.run(
+            [find_claude_binary(), "-p", "-"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            review = result.stdout.strip()
+            for user_id in user_ids:
+                try:
+                    if len(review) > 4000:
+                        await bot.send_message(chat_id=user_id, text="*Weekly Review*", parse_mode="Markdown")
+                        for i in range(0, len(review), 4000):
+                            await bot.send_message(chat_id=user_id, text=review[i : i + 4000])
+                    else:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"*Weekly Review*\n\n{review}",
+                            parse_mode="Markdown",
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to send weekly review to user {user_id}: {e}")
+
+            # Append to daily journal
+            config = load_config()
+            if config.daily_journal_dir:
+                journal_dir = Path(config.daily_journal_dir).expanduser()
+            else:
+                journal_dir = FRIDAY_HOME / "journal" / "daily"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            output_file = journal_dir / f"{date.today().isoformat()}.md"
+            if output_file.exists():
+                with open(output_file, "a") as f:
+                    f.write(f"\n\n---\n\n## Weekly Review\n\n{review}")
+            else:
+                output_file.write_text(f"## Weekly Review\n\n{review}")
+        else:
+            logger.error(f"Claude failed to generate weekly review: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        logger.error("Weekly review generation timed out")
+    except FileNotFoundError:
+        logger.error("Claude CLI not found")
+    except Exception as e:
+        logger.error(f"Error generating weekly review: {e}")
+
+
 async def send_recap_reminder(bot: Bot, user_ids: list[int], config):
     """Send evening recap reminder if no recap exists for today."""
     today = date.today()
@@ -376,7 +453,8 @@ def run_bot():
 
         await application.bot.set_my_commands([
             BotCommand("morning", "Get your morning briefing"),
-            BotCommand("week", "Weekly planning overview"),
+            BotCommand("startweek", "Start-of-week planning"),
+            BotCommand("endweek", "End-of-week review"),
             BotCommand("evening", "Record your daily recap"),
             BotCommand("tasks", "List priority tasks"),
             BotCommand("calendar", "Today's events"),
