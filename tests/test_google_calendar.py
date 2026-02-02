@@ -86,6 +86,45 @@ class TestGoogleCalendarAdapter:
         assert events[0].title == "Holiday"
 
     @patch("friday.adapters.google_calendar.GoogleCalendarAdapter._build_service")
+    def test_fetch_day_excludes_declined_events(self, mock_build):
+        service = MagicMock()
+        mock_build.return_value = service
+
+        service.calendarList().list().execute.return_value = {"items": []}
+        service.events().list().execute.return_value = {
+            "items": [
+                {
+                    "summary": "Accepted Meeting",
+                    "start": {"dateTime": "2025-01-15T10:00:00-05:00"},
+                    "end": {"dateTime": "2025-01-15T10:30:00-05:00"},
+                    "attendees": [
+                        {"email": "me@example.com", "self": True, "responseStatus": "accepted"},
+                    ],
+                },
+                {
+                    "summary": "Declined Meeting",
+                    "start": {"dateTime": "2025-01-15T11:00:00-05:00"},
+                    "end": {"dateTime": "2025-01-15T11:30:00-05:00"},
+                    "attendees": [
+                        {"email": "me@example.com", "self": True, "responseStatus": "declined"},
+                    ],
+                },
+                {
+                    "summary": "No Attendees Event",
+                    "start": {"dateTime": "2025-01-15T12:00:00-05:00"},
+                    "end": {"dateTime": "2025-01-15T12:30:00-05:00"},
+                },
+            ]
+        }
+
+        adapter = GoogleCalendarAdapter(config_folder="/tmp/test", label="Work")
+        events = adapter.fetch_day(date(2025, 1, 15))
+
+        assert len(events) == 2
+        assert events[0].title == "Accepted Meeting"
+        assert events[1].title == "No Attendees Event"
+
+    @patch("friday.adapters.google_calendar.GoogleCalendarAdapter._build_service")
     def test_fetch_day_api_error_returns_empty(self, mock_build):
         mock_build.side_effect = Exception("API error")
         adapter = GoogleCalendarAdapter(config_folder="/tmp/test")

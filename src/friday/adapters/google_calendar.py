@@ -144,6 +144,11 @@ class GoogleCalendarAdapter:
             )
 
             for item in result.get("items", []):
+                # Skip events the user has declined
+                attendees = item.get("attendees", [])
+                if any(a.get("self") and a.get("responseStatus") == "declined" for a in attendees):
+                    continue
+
                 start_raw = item.get("start", {})
                 end_raw = item.get("end", {})
 
