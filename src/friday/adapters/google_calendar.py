@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from friday.core.calendar import Event
 
@@ -147,9 +148,10 @@ class GoogleCalendarAdapter:
                 end_raw = item.get("end", {})
 
                 if "date" in start_raw:
-                    # All-day event
-                    start_dt = datetime.fromisoformat(start_raw["date"])
-                    end_dt = datetime.fromisoformat(end_raw["date"]) if "date" in end_raw else None
+                    # All-day event — attach timezone so sorting with timed events works
+                    tz = ZoneInfo(self.timezone)
+                    start_dt = datetime.fromisoformat(start_raw["date"]).replace(tzinfo=tz)
+                    end_dt = datetime.fromisoformat(end_raw["date"]).replace(tzinfo=tz) if "date" in end_raw else None
                     all_day = True
                 elif "dateTime" in start_raw:
                     start_dt = datetime.fromisoformat(start_raw["dateTime"])
