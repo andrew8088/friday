@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/andrew/friday/.venv/bin/friday</string>
+        <string>/Users/andrew/code/friday/.venv/bin/friday</string>
         <string>bot</string>
     </array>
 
