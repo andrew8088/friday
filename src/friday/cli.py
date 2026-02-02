@@ -103,6 +103,19 @@ def inbox(as_json: bool):
             click.echo(f"• {task.title}")
 
 
+@main.command("task-debug")
+def task_debug():
+    """Dump raw TickTick API responses for debugging."""
+    try:
+        client = TickTickClient()
+        raw = client.fetch_all_raw()
+    except AuthenticationError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(json.dumps(raw, indent=2, default=str))
+
+
 @main.group(invoke_without_command=True)
 @click.pass_context
 def calendar(ctx):
@@ -585,15 +598,14 @@ def compile_briefing() -> str:
     work_tasks = []
     personal_tasks = []
 
+    notes_md = ""
     try:
+        from .core.tasks import filter_actionable, filter_notes
+
         client = TickTickClient()
         all_tasks = client.get_all_tasks()
 
-        # Actionable = due in 3 days OR Q1 (urgent + important)
-        actionable = [
-            t for t in all_tasks
-            if t.is_urgent(urgent_days=3) or t.quadrant(urgent_days=3) == 1
-        ]
+        actionable = filter_actionable(all_tasks, urgent_days=3)
 
         # Split by work/personal
         work_tasks = [t for t in actionable if t.project_name in config.work_task_lists]
@@ -626,6 +638,20 @@ def compile_briefing() -> str:
 ### Other
 {other_tasks_md}"""
 
+        # Notes = time-relevant reminders, not tasks to complete
+        notes = filter_notes(all_tasks, urgent_days=3)
+        if notes:
+            def format_note(t):
+                days_until = (t.due_date - today).days
+                if days_until < 0:
+                    when = f"since {-days_until}d ago"
+                elif days_until == 0:
+                    when = "today"
+                else:
+                    when = f"in {days_until}d"
+                return f"- {t.title} ({when}, project: {t.project_name})"
+            notes_md = "\n".join(format_note(n) for n in notes)
+
     except AuthenticationError:
         actionable_tasks_md = "(TickTick not authenticated - run 'friday auth')"
 
@@ -653,6 +679,7 @@ def compile_briefing() -> str:
         prompt = prompt.replace("{{DAY_OF_WEEK}}", today.strftime("%A"))
         prompt = prompt.replace("{{YESTERDAY_CONTEXT}}", "")
         prompt = prompt.replace("{{TASKS}}", actionable_tasks_md)
+        prompt = prompt.replace("{{NOTES}}", notes_md or "None")
         prompt = prompt.replace("{{CALENDAR}}", calendar_md)
         prompt = prompt.replace("{{FREE_SLOTS}}", free_slots_md)
         prompt = prompt.replace("{{TIME_CONTEXT}}", f"Currently {time_context} ({config.work_hours}). Focus on {task_focus} tasks.")
@@ -677,6 +704,10 @@ Currently {time_context} ({config.work_hours}). Focus on {task_focus} tasks.
 These are tasks due within 3 days OR marked urgent+important (Q1).
 
 {actionable_tasks_md}
+
+## Reminders (Notes)
+These are not tasks to complete — they are time-relevant info to keep in mind.
+{notes_md or "None"}
 
 ## Instructions
 1. For each actionable task, recommend a specific free time slot to work on it
@@ -824,13 +855,17 @@ def compile_week() -> str:
     # Tasks: due before end of Saturday OR priority >= 3
     end_of_saturday = today + timedelta(days=days_until_saturday)
     tasks_md = ""
+    notes_md = ""
     try:
+        from .core.tasks import filter_notes
+
         client = TickTickClient()
         all_tasks = client.get_all_tasks()
 
         week_tasks = [
             t for t in all_tasks
-            if (t.due_date and t.due_date <= end_of_saturday) or t.priority >= 3
+            if not t.is_note
+            and ((t.due_date and t.due_date <= end_of_saturday) or t.priority >= 3)
         ]
 
         def format_task(t):
@@ -862,6 +897,19 @@ def compile_week() -> str:
 
 ### Other
 {other_md}"""
+
+        notes = filter_notes(all_tasks, urgent_days=days_remaining)
+        if notes:
+            def format_note(t):
+                days_until = (t.due_date - today).days
+                if days_until < 0:
+                    when = f"since {-days_until}d ago"
+                elif days_until == 0:
+                    when = "today"
+                else:
+                    when = f"in {days_until}d"
+                return f"- {t.title} ({when}, project: {t.project_name})"
+            notes_md = "\n".join(format_note(n) for n in notes)
     except AuthenticationError:
         tasks_md = "(TickTick not authenticated - run 'friday auth')"
 
@@ -873,6 +921,7 @@ def compile_week() -> str:
         prompt = prompt.replace("{{CALENDAR}}", calendar_md)
         prompt = prompt.replace("{{FREE_SLOTS}}", free_slots_md)
         prompt = prompt.replace("{{TASKS}}", tasks_md)
+        prompt = prompt.replace("{{NOTES}}", notes_md or "None")
         return prompt
 
     # Fallback inline template
@@ -888,6 +937,10 @@ def compile_week() -> str:
 
 ## Tasks (due this week or high priority)
 {tasks_md}
+
+## Reminders (Notes)
+These are not tasks to complete — they are time-relevant info to keep in mind.
+{notes_md or "None"}
 
 ## Instructions
 1. Suggest 3 focus areas for the rest of the week

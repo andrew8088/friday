@@ -15,6 +15,10 @@ These are tasks due within 3 days OR marked urgent+important (Q1 in Eisenhower m
 
 {{TASKS}}
 
+## Reminders (Notes)
+These are not tasks to complete — they are time-relevant info to keep in mind.
+{{NOTES}}
+
 ## Your Job
 
 Create a specific action plan for today:

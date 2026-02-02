@@ -93,6 +93,16 @@ class TickTickAdapter:
             projects = self._get_projects()
             self._project_names = {p["id"]: p["name"] for p in projects}
 
+    def fetch_all_raw(self) -> list[dict]:
+        """Fetch raw API dicts for all tasks (for debugging)."""
+        self._load_project_names()
+        raw = []
+        for project_id, project_name in self._project_names.items():
+            for task_data in self._get_project_tasks(project_id):
+                task_data["_project_name"] = project_name
+                raw.append(task_data)
+        return raw
+
     def fetch_all(self) -> list[Task]:
         """Fetch all tasks from all projects."""
         self._load_project_names()

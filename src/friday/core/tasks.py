@@ -14,6 +14,11 @@ class Task:
     due_date: date | None
     project_id: str
     project_name: str = ""
+    kind: str = "TEXT"
+
+    @property
+    def is_note(self) -> bool:
+        return self.kind == "NOTE"
 
     def is_important(self) -> bool:
         """High priority (3+) = important."""
@@ -73,6 +78,7 @@ class Task:
             due_date=due,
             project_id=data.get("projectId", ""),
             project_name=project_name,
+            kind=data.get("kind", "TEXT") or "TEXT",
         )
 
 
@@ -90,7 +96,8 @@ def filter_actionable(
     return [
         t
         for t in tasks
-        if t.is_urgent(urgent_days, as_of) or t.quadrant(urgent_days, as_of) == 1
+        if not t.is_note
+        and (t.is_urgent(urgent_days, as_of) or t.quadrant(urgent_days, as_of) == 1)
     ]
 
 
@@ -128,6 +135,20 @@ def sort_by_priority(tasks: list[Task], as_of: date | None = None) -> list[Task]
         return (-t.priority, days if days is not None else 9999)
 
     return sorted(tasks, key=sort_key)
+
+
+def filter_notes(
+    tasks: list[Task],
+    urgent_days: int = 3,
+    as_of: date | None = None,
+) -> list[Task]:
+    """Filter to notes that are due soon (time-relevant reminders)."""
+    as_of = as_of or date.today()
+    return [
+        t
+        for t in tasks
+        if t.is_note and t.due_date and (t.due_date - as_of).days <= urgent_days
+    ]
 
 
 def filter_overdue(tasks: list[Task], as_of: date | None = None) -> list[Task]:
